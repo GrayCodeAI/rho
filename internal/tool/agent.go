@@ -210,47 +210,56 @@ func (MultiAgentTool) Description() string {
 		"Each task is a prompt string (explore by default) or an object with typed spawn fields."
 }
 
-func (MultiAgentTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"tasks": map[string]interface{}{
-				"type": "array",
-				"items": map[string]interface{}{
-					"oneOf": []interface{}{
-						map[string]interface{}{"type": "string"},
-						map[string]interface{}{
-							"type": "object",
-							"properties": map[string]interface{}{
-								"prompt":          map[string]interface{}{"type": "string"},
-								"subagent_type":   map[string]interface{}{"type": "string"},
-								"capability_mode": map[string]interface{}{"type": "string"},
-								"isolation":       map[string]interface{}{"type": "string"},
-								"thoroughness":    map[string]interface{}{"type": "string"},
-								"description":     map[string]interface{}{"type": "string"},
-								"model":           map[string]interface{}{"type": "string"},
-								"cwd":             map[string]interface{}{"type": "string"},
+// MultiAgentInput is the typed input for MultiAgentTool.
+type MultiAgentInput struct {
+	Tasks           []json.RawMessage `json:"tasks"`
+	RunInBackground bool              `json:"run_in_background"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (MultiAgentTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"tasks": {
+				Type: "array",
+				Items: &SchemaProperty{
+					OneOf: []SchemaProperty{
+						{Type: "string"},
+						{
+							Type: "object",
+							Properties: map[string]SchemaProperty{
+								"prompt":          {Type: "string"},
+								"subagent_type":   {Type: "string"},
+								"capability_mode": {Type: "string"},
+								"isolation":       {Type: "string"},
+								"thoroughness":    {Type: "string"},
+								"description":     {Type: "string"},
+								"model":           {Type: "string"},
+								"cwd":             {Type: "string"},
 							},
-							"required": []string{"prompt"},
+							Required: []string{"prompt"},
 						},
 					},
 				},
 			},
-			"run_in_background": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, spawn all sub-agents in the background.",
-			},
+			"run_in_background": {Type: "boolean", Description: "If true, spawn all sub-agents in the background."},
 		},
-		"required": []string{"tasks"},
+		Required: []string{"tasks"},
 	}
 }
 
+func (MultiAgentTool) Parameters() map[string]interface{} {
+	return multiAgentSchema.ToJSONSchema()
+}
+
+// multiAgentSchema is the single source of truth for MultiAgent's input schema.
+var multiAgentSchema = MultiAgentTool{}.Schema()
+
 func (MultiAgentTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Tasks           []json.RawMessage `json:"tasks"`
-		RunInBackground bool              `json:"run_in_background"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[MultiAgentInput]("MultiAgent", input)
+	if err != nil {
 		return "", err
 	}
 	if len(p.Tasks) > maxParallelAgentTasks {

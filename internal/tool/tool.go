@@ -69,6 +69,19 @@ type SchemaProperty struct {
 	// hand-written schemas exactly.
 	Minimum interface{} `json:"minimum,omitempty"`
 	Maximum interface{} `json:"maximum,omitempty"`
+	// MaxLength/MinLength constrain string fields. MaxItems/MinItems constrain
+	// array fields. Plain ints (omitted when zero): zero is never a meaningful
+	// bound, so authors write literals like MaxLength: 2000.
+	MaxLength int `json:"maxLength,omitempty"`
+	MinLength int `json:"minLength,omitempty"`
+	MaxItems  int `json:"maxItems,omitempty"`
+	MinItems  int `json:"minItems,omitempty"`
+	// OneOf/AnyOf list alternative subschemas (e.g. array items that accept a
+	// string or an object). Each branch is a full SchemaProperty. A property
+	// that only carries OneOf/AnyOf leaves Type empty, and toMap omits the
+	// "type" key in that case to match hand-written schemas exactly.
+	OneOf []SchemaProperty `json:"oneOf,omitempty"`
+	AnyOf []SchemaProperty `json:"anyOf,omitempty"`
 }
 
 // SchemaProvider is an optional interface tools can implement to expose a typed
@@ -98,7 +111,10 @@ func (s ToolSchema) ToJSONSchema() map[string]interface{} {
 }
 
 func (p SchemaProperty) toMap() map[string]interface{} {
-	m := map[string]interface{}{"type": p.Type}
+	m := map[string]interface{}{}
+	if p.Type != "" {
+		m["type"] = p.Type
+	}
 	if p.Description != "" {
 		m["description"] = p.Description
 	}
@@ -113,6 +129,32 @@ func (p SchemaProperty) toMap() map[string]interface{} {
 	}
 	if p.Maximum != nil {
 		m["maximum"] = p.Maximum
+	}
+	if p.MaxLength != 0 {
+		m["maxLength"] = p.MaxLength
+	}
+	if p.MinLength != 0 {
+		m["minLength"] = p.MinLength
+	}
+	if p.MaxItems != 0 {
+		m["maxItems"] = p.MaxItems
+	}
+	if p.MinItems != 0 {
+		m["minItems"] = p.MinItems
+	}
+	if len(p.OneOf) > 0 {
+		branches := make([]interface{}, 0, len(p.OneOf))
+		for _, b := range p.OneOf {
+			branches = append(branches, b.toMap())
+		}
+		m["oneOf"] = branches
+	}
+	if len(p.AnyOf) > 0 {
+		branches := make([]interface{}, 0, len(p.AnyOf))
+		for _, b := range p.AnyOf {
+			branches = append(branches, b.toMap())
+		}
+		m["anyOf"] = branches
 	}
 	if p.Items != nil {
 		m["items"] = p.Items.toMap()
