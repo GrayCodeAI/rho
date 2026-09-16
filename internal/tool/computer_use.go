@@ -22,27 +22,26 @@ func (ComputerUseTool) Description() string {
 	return "Operate the host desktop (snapshot UI, click, type, scroll, keypress, screenshot) via a pluggable backend. Requires a wired computer backend (see SetComputerBackend)."
 }
 
-func (ComputerUseTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"snapshot", "click", "type", "scroll", "press", "screenshot"},
-				"description": "snapshot: dump the UI; click: click an element/ref; type: enter text; scroll: scroll; press: send key chord; screenshot: capture screen.",
-			},
-			"target": map[string]interface{}{
-				"type":        "string",
-				"description": "Element ref (e.g. @e1) or label for click/type/scroll.",
-			},
-			"text": map[string]interface{}{
-				"type":        "string",
-				"description": "Text to type or key chord for press.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ComputerUseTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"snapshot", "click", "type", "scroll", "press", "screenshot"}, Description: "snapshot: dump the UI; click: click an element/ref; type: enter text; scroll: scroll; press: send key chord; screenshot: capture screen."},
+			"target": {Type: "string", Description: "Element ref (e.g. @e1) or label for click/type/scroll."},
+			"text":   {Type: "string", Description: "Text to type or key chord for press."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
+
+func (ComputerUseTool) Parameters() map[string]interface{} {
+	return computerUseSchema.ToJSONSchema()
+}
+
+// computerUseSchema is the single source of truth for ComputerUse's input schema.
+var computerUseSchema = ComputerUseTool{}.Schema()
 
 // ComputerBackend is the pluggable host-desktop automation backend.
 type ComputerBackend interface {

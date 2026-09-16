@@ -405,36 +405,43 @@ func (TransactionTool) Description() string {
 		"Either all operations succeed or all are rolled back."
 }
 
-func (TransactionTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"operations": map[string]interface{}{
-				"type":        "array",
-				"description": "List of file operations to apply atomically",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"type":        map[string]interface{}{"type": "string", "enum": []string{"create", "modify", "delete", "rename"}, "description": "Operation type"},
-						"path":        map[string]interface{}{"type": "string", "description": "Target file path"},
-						"old_path":    map[string]interface{}{"type": "string", "description": "Source path (for rename)"},
-						"content":     map[string]interface{}{"type": "string", "description": "File content (for create/modify)"},
-						"mode":        map[string]interface{}{"type": "integer", "description": "File mode/permissions (optional, default 0644)"},
-						"new_content": map[string]interface{}{"type": "string", "description": "New content (alias for content, for modify)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TransactionTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"operations": {
+				Type:        "array",
+				Description: "List of file operations to apply atomically",
+				Items: &SchemaProperty{
+					Type: "object",
+					Properties: map[string]SchemaProperty{
+						"type":        {Type: "string", Enum: []interface{}{"create", "modify", "delete", "rename"}, Description: "Operation type"},
+						"path":        {Type: "string", Description: "Target file path"},
+						"old_path":    {Type: "string", Description: "Source path (for rename)"},
+						"content":     {Type: "string", Description: "File content (for create/modify)"},
+						"mode":        {Type: "integer", Description: "File mode/permissions (optional, default 0644)"},
+						"new_content": {Type: "string", Description: "New content (alias for content, for modify)"},
 					},
-					"required": []string{"type", "path"},
+					Required: []string{"type", "path"},
 				},
 			},
-			"dry_run": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, validate and describe operations without applying them",
-			},
+			"dry_run": {Type: "boolean", Description: "If true, validate and describe operations without applying them"},
 		},
-		"required": []string{"operations"},
+		Required: []string{"operations"},
 	}
 }
 
-type transactionInput struct {
+func (TransactionTool) Parameters() map[string]interface{} {
+	return transactionSchema.ToJSONSchema()
+}
+
+// transactionSchema is the single source of truth for Transaction's input schema.
+var transactionSchema = TransactionTool{}.Schema()
+
+// TransactionInput is the typed input for TransactionTool.
+type TransactionInput struct {
 	Operations []struct {
 		Type       string `json:"type"`
 		Path       string `json:"path"`
@@ -447,9 +454,9 @@ type transactionInput struct {
 }
 
 func (TransactionTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p transactionInput
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[TransactionInput]("Transaction", input)
+	if err != nil {
+		return "", err
 	}
 	if len(p.Operations) == 0 {
 		return "", fmt.Errorf("at least one operation is required")

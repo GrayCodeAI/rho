@@ -24,29 +24,39 @@ var (
 
 type TodoWriteTool struct{}
 
+// TodoWriteInput is the typed input for TodoWriteTool.
+type TodoWriteInput struct {
+	Action string      `json:"action"`
+	Task   string      `json:"task"`
+	ID     int         `json:"id"`
+	Todos  []todoInput `json:"todos"`
+}
+
 func (TodoWriteTool) Name() string      { return "TodoWrite" }
 func (TodoWriteTool) Aliases() []string { return []string{"todo"} }
 func (TodoWriteTool) Description() string {
 	return "Manage a task list. Actions: add, complete, list, remove."
 }
 
-func (TodoWriteTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{"type": "string", "enum": []string{"add", "complete", "list", "remove"}, "description": "Action to perform"},
-			"task":   map[string]interface{}{"type": "string", "description": "Task description (for add)"},
-			"id":     map[string]interface{}{"type": "integer", "description": "Task ID (for complete/remove)"},
-			"todos": map[string]interface{}{
-				"type":        "array",
-				"description": "Archive-compatible full todo list replacement",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"content":  map[string]interface{}{"type": "string"},
-						"task":     map[string]interface{}{"type": "string"},
-						"status":   map[string]interface{}{"type": "string"},
-						"priority": map[string]interface{}{"type": "string"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TodoWriteTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"add", "complete", "list", "remove"}, Description: "Action to perform"},
+			"task":   {Type: "string", Description: "Task description (for add)"},
+			"id":     {Type: "integer", Description: "Task ID (for complete/remove)"},
+			"todos": {
+				Type:        "array",
+				Description: "Archive-compatible full todo list replacement",
+				Items: &SchemaProperty{
+					Type: "object",
+					Properties: map[string]SchemaProperty{
+						"content":  {Type: "string"},
+						"task":     {Type: "string"},
+						"status":   {Type: "string"},
+						"priority": {Type: "string"},
 					},
 				},
 			},
@@ -54,14 +64,16 @@ func (TodoWriteTool) Parameters() map[string]interface{} {
 	}
 }
 
+func (TodoWriteTool) Parameters() map[string]interface{} {
+	return todoWriteSchema.ToJSONSchema()
+}
+
+// todoWriteSchema is the single source of truth for TodoWrite's input schema.
+var todoWriteSchema = TodoWriteTool{}.Schema()
+
 func (TodoWriteTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string      `json:"action"`
-		Task   string      `json:"task"`
-		ID     int         `json:"id"`
-		Todos  []todoInput `json:"todos"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TodoWriteInput]("TodoWrite", input)
+	if err != nil {
 		return "", err
 	}
 	todoMu.Lock()

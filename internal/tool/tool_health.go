@@ -14,6 +14,11 @@ import (
 // before attempting a task.
 type ToolHealthTool struct{}
 
+// ToolHealthInput is the typed input for ToolHealthTool.
+type ToolHealthInput struct {
+	IncludeOptional *bool `json:"include_optional"`
+}
+
 func (ToolHealthTool) Name() string      { return "ToolHealth" }
 func (ToolHealthTool) RiskLevel() string { return "low" }
 func (ToolHealthTool) Aliases() []string { return []string{"tool-health", "tools_health"} }
@@ -21,17 +26,23 @@ func (ToolHealthTool) Description() string {
 	return "Inspect Rho's registered/model-visible tools and common runtime prerequisites (git, go, node, Python, Docker, gh, and Chrome) without revealing secrets or changing state."
 }
 
-func (ToolHealthTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"include_optional": map[string]interface{}{
-				"type":        "boolean",
-				"description": "Include lazy-registered tools in the report (default true).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ToolHealthTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"include_optional": {Type: "boolean", Description: "Include lazy-registered tools in the report (default true)."},
 		},
 	}
 }
+
+func (ToolHealthTool) Parameters() map[string]interface{} {
+	return toolHealthSchema.ToJSONSchema()
+}
+
+// toolHealthSchema is the single source of truth for ToolHealth's input schema.
+var toolHealthSchema = ToolHealthTool{}.Schema()
 
 type toolHealthReport struct {
 	Registered    []toolHealthEntry    `json:"registered_tools"`
@@ -51,13 +62,13 @@ type prerequisiteStatus struct {
 }
 
 func (ToolHealthTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		IncludeOptional *bool `json:"include_optional"`
-	}
+	var params ToolHealthInput
 	if len(input) > 0 && string(input) != "null" {
-		if err := json.Unmarshal(input, &params); err != nil {
-			return "", fmt.Errorf("invalid input: %w", err)
+		decoded, err := DecodeInput[ToolHealthInput]("ToolHealth", input)
+		if err != nil {
+			return "", err
 		}
+		params = decoded
 	}
 	includeOptional := true
 	if params.IncludeOptional != nil {

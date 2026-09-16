@@ -644,7 +644,7 @@ func TestTransactionTool_Execute(t *testing.T) {
 
 	createPath := filepath.Join(dir, "new_file.txt")
 
-	input := transactionInput{
+	input := TransactionInput{
 		Operations: []struct {
 			Type       string `json:"type"`
 			Path       string `json:"path"`
@@ -686,7 +686,7 @@ func TestTransactionTool_ExecuteDryRun(t *testing.T) {
 	path := filepath.Join(dir, "file.txt")
 	os.WriteFile(path, []byte("original"), 0o644)
 
-	input := transactionInput{
+	input := TransactionInput{
 		Operations: []struct {
 			Type       string `json:"type"`
 			Path       string `json:"path"`
@@ -720,7 +720,7 @@ func TestTransactionTool_ExecuteDryRun(t *testing.T) {
 }
 
 func TestTransactionTool_ExecuteEmptyOperations(t *testing.T) {
-	input := transactionInput{}
+	input := TransactionInput{}
 	data, _ := json.Marshal(input)
 	ctx := testCtx()
 
@@ -738,7 +738,7 @@ func TestTransactionTool_RejectsCredentialContent(t *testing.T) {
 	dir := t.TempDir()
 	createPath := filepath.Join(dir, "notes.txt")
 
-	input := transactionInput{
+	input := TransactionInput{
 		Operations: []struct {
 			Type       string `json:"type"`
 			Path       string `json:"path"`

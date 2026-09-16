@@ -665,3 +665,134 @@ func TestPowerShellSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [command]", PowerShellTool{}.Parameters()["required"])
 	}
 }
+
+func TestBrowserSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = BrowserTool{}
+	props := schemaProps(t, BrowserTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 9 || enum[0] != "navigate" || enum[8] != "close" {
+		t.Fatalf("action enum = %v, want 9 options", props["action"])
+	}
+	if props["clear"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("clear type wrong")
+	}
+	if props["wait_ms"].(map[string]interface{})["type"] != "number" {
+		t.Fatal("wait_ms type wrong")
+	}
+	req, _ := BrowserTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", BrowserTool{}.Parameters()["required"])
+	}
+}
+
+func TestComputerUseSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ComputerUseTool{}
+	props := schemaProps(t, ComputerUseTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 6 || enum[0] != "snapshot" || enum[5] != "screenshot" {
+		t.Fatalf("action enum = %v, want 6 options", props["action"])
+	}
+	req, _ := ComputerUseTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", ComputerUseTool{}.Parameters()["required"])
+	}
+}
+
+func TestGenerateMediaSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = GenerateMediaTool{}
+	props := schemaProps(t, GenerateMediaTool{}.Parameters())
+	enum, ok := props["kind"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "image" || enum[1] != "video" {
+		t.Fatalf("kind enum = %v, want [image video]", props["kind"])
+	}
+	count := props["count"].(map[string]interface{})
+	if count["minimum"] != 1 || count["maximum"] != 4 {
+		t.Fatalf("count bounds = %v, want min 1 max 4", count)
+	}
+	dur := props["duration_seconds"].(map[string]interface{})
+	if dur["minimum"] != 1 || dur["maximum"] != 15 {
+		t.Fatalf("duration_seconds bounds = %v, want min 1 max 15", dur)
+	}
+	req, _ := GenerateMediaTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "kind" || req[1] != "prompt" {
+		t.Fatalf("required = %v, want [kind prompt]", GenerateMediaTool{}.Parameters()["required"])
+	}
+}
+
+func TestMultiEditSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = MultiEditTool{}
+	props := schemaProps(t, MultiEditTool{}.Parameters())
+	edits := props["edits"].(map[string]interface{})
+	if edits["type"] != "array" {
+		t.Fatalf("edits type = %v, want array", edits["type"])
+	}
+	items, ok := edits["items"].(map[string]interface{})
+	if !ok || items["type"] != "object" {
+		t.Fatalf("edits items = %v, want object schema", edits["items"])
+	}
+	itemProps := items["properties"].(map[string]interface{})
+	if itemProps["old_string"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("old_string type wrong")
+	}
+	if _, hasReq := items["required"]; hasReq {
+		t.Fatal("edits items should have no required array")
+	}
+}
+
+func TestPatchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = PatchTool{}
+	props := schemaProps(t, PatchTool{}.Parameters())
+	if props["patch"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("patch type wrong")
+	}
+	req, _ := PatchTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "patch" {
+		t.Fatalf("required = %v, want [patch]", PatchTool{}.Parameters()["required"])
+	}
+}
+
+func TestTransactionSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TransactionTool{}
+	props := schemaProps(t, TransactionTool{}.Parameters())
+	ops := props["operations"].(map[string]interface{})
+	if ops["type"] != "array" {
+		t.Fatalf("operations type = %v, want array", ops["type"])
+	}
+	items := ops["items"].(map[string]interface{})
+	itemProps := items["properties"].(map[string]interface{})
+	if itemProps["type"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("op type prop wrong")
+	}
+	itemReq, ok := items["required"].([]string)
+	if !ok || len(itemReq) != 2 || itemReq[0] != "type" || itemReq[1] != "path" {
+		t.Fatalf("items required = %v, want [type path]", items["required"])
+	}
+	req, _ := TransactionTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "operations" {
+		t.Fatalf("top required = %v, want [operations]", TransactionTool{}.Parameters()["required"])
+	}
+	if props["dry_run"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("dry_run type wrong")
+	}
+}
+
+func TestTodoWriteSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TodoWriteTool{}
+	props := schemaProps(t, TodoWriteTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "add" || enum[3] != "remove" {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+	todos := props["todos"].(map[string]interface{})
+	if todos["type"] != "array" {
+		t.Fatalf("todos type = %v, want array", todos["type"])
+	}
+}
+
+func TestToolHealthSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ToolHealthTool{}
+	props := schemaProps(t, ToolHealthTool{}.Parameters())
+	if props["include_optional"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("include_optional type wrong")
+	}
+}

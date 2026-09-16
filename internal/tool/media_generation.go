@@ -54,6 +54,18 @@ type MediaOptions struct {
 	DurationSec int    `json:"duration_seconds,omitempty"`
 }
 
+// GenerateMediaInput is the typed input for GenerateMediaTool.
+type GenerateMediaInput struct {
+	Kind        string `json:"kind"`
+	Prompt      string `json:"prompt"`
+	Source      string `json:"source"`
+	AspectRatio string `json:"aspect_ratio"`
+	Resolution  string `json:"resolution"`
+	Count       int    `json:"count"`
+	DurationSec int    `json:"duration_seconds"`
+	OutputPath  string `json:"output_path"`
+}
+
 // MediaAsset is the persisted, locally-available representation returned to the
 // model and user.
 type MediaAsset struct {
@@ -96,65 +108,36 @@ func (GenerateMediaTool) Description() string {
 	return "Generate an image or short video from a text prompt (and optionally edit an existing local image or URL). The generated asset is saved locally and its path is returned so you can reference it directly."
 }
 
-func (GenerateMediaTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"kind": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"image", "video"},
-				"description": "The kind of media to generate.",
-			},
-			"prompt": map[string]interface{}{
-				"type":        "string",
-				"description": "Text description of the media to generate.",
-			},
-			"source": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional local file path or URL used for image editing / image-to-video.",
-			},
-			"aspect_ratio": map[string]interface{}{
-				"type":        "string",
-				"description": "Aspect ratio, e.g. 16:9, 1:1, 9:16.",
-			},
-			"resolution": map[string]interface{}{
-				"type":        "string",
-				"description": "Resolution: images 1k or 2k; video 480p or 720p.",
-			},
-			"count": map[string]interface{}{
-				"type":        "integer",
-				"minimum":     1,
-				"maximum":     4,
-				"description": "Number of images to generate (default 1).",
-			},
-			"duration_seconds": map[string]interface{}{
-				"type":        "integer",
-				"minimum":     1,
-				"maximum":     15,
-				"description": "Video duration in seconds (default 5).",
-			},
-			"output_path": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional explicit output directory; defaults to the user state generated-media directory.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (GenerateMediaTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"kind":             {Type: "string", Enum: []interface{}{"image", "video"}, Description: "The kind of media to generate."},
+			"prompt":           {Type: "string", Description: "Text description of the media to generate."},
+			"source":           {Type: "string", Description: "Optional local file path or URL used for image editing / image-to-video."},
+			"aspect_ratio":     {Type: "string", Description: "Aspect ratio, e.g. 16:9, 1:1, 9:16."},
+			"resolution":       {Type: "string", Description: "Resolution: images 1k or 2k; video 480p or 720p."},
+			"count":            {Type: "integer", Minimum: 1, Maximum: 4, Description: "Number of images to generate (default 1)."},
+			"duration_seconds": {Type: "integer", Minimum: 1, Maximum: 15, Description: "Video duration in seconds (default 5)."},
+			"output_path":      {Type: "string", Description: "Optional explicit output directory; defaults to the user state generated-media directory."},
 		},
-		"required": []string{"kind", "prompt"},
+		Required: []string{"kind", "prompt"},
 	}
 }
 
+func (GenerateMediaTool) Parameters() map[string]interface{} {
+	return generateMediaSchema.ToJSONSchema()
+}
+
+// generateMediaSchema is the single source of truth for GenerateMedia's input schema.
+var generateMediaSchema = GenerateMediaTool{}.Schema()
+
 func (GenerateMediaTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Kind        string `json:"kind"`
-		Prompt      string `json:"prompt"`
-		Source      string `json:"source"`
-		AspectRatio string `json:"aspect_ratio"`
-		Resolution  string `json:"resolution"`
-		Count       int    `json:"count"`
-		DurationSec int    `json:"duration_seconds"`
-		OutputPath  string `json:"output_path"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[GenerateMediaInput]("GenerateMedia", input)
+	if err != nil {
+		return "", err
 	}
 	p.Kind = strings.ToLower(strings.TrimSpace(p.Kind))
 	p.Prompt = strings.TrimSpace(p.Prompt)
@@ -203,7 +186,6 @@ func (GenerateMediaTool) Execute(ctx context.Context, input json.RawMessage) (st
 	}
 
 	var results []MediaResult
-	var err error
 	switch p.Kind {
 	case "image":
 		results, err = mediaEngine.GenerateImage(ctx, p.Prompt, source, opts)

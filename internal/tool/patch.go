@@ -408,31 +408,40 @@ func levenshteinDistance(a, b string) int {
 // PatchTool implements the Tool interface for applying structured patches.
 type PatchTool struct{}
 
+// PatchInput is the typed input for PatchTool.
+type PatchInput struct {
+	Patch string `json:"patch"`
+}
+
 func (PatchTool) Name() string { return "Patch" }
 
 func (PatchTool) Description() string {
 	return "Apply a structured patch to one or more files. Supports context-anchored hunks for precise modifications."
 }
 
-func (PatchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"patch": map[string]interface{}{
-				"type":        "string",
-				"description": "Patch content in the *** Begin Patch format",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (PatchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"patch": {Type: "string", Description: "Patch content in the *** Begin Patch format"},
 		},
-		"required": []interface{}{"patch"},
+		Required: []string{"patch"},
 	}
 }
 
+func (PatchTool) Parameters() map[string]interface{} {
+	return patchSchema.ToJSONSchema()
+}
+
+// patchSchema is the single source of truth for Patch's input schema.
+var patchSchema = PatchTool{}.Schema()
+
 func (PatchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Patch string `json:"patch"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[PatchInput]("Patch", input)
+	if err != nil {
+		return "", err
 	}
 	if params.Patch == "" {
 		return "", fmt.Errorf("patch content is required")
