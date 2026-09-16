@@ -24,34 +24,36 @@ func (ImpactTool) Description() string {
 	return "Analyze cross-file impact of changes: dependencies, dependents, co-change patterns, risk score, and test suggestions."
 }
 
-func (ImpactTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"files": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Files to analyze impact for (e.g. changed files). If empty, uses git diff.",
-			},
-			"depth": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max traversal depth for dependency analysis (default: 3)",
-			},
-			"root": map[string]interface{}{
-				"type":        "string",
-				"description": "Project root directory (default: current dir)",
-			},
+// ImpactInput is the typed input for ImpactTool.
+type ImpactInput struct {
+	Files []string `json:"files"`
+	Depth int      `json:"depth"`
+	Root  string   `json:"root"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ImpactTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"files": {Type: "array", Description: "Files to analyze impact for (e.g. changed files). If empty, uses git diff.", Items: &SchemaProperty{Type: "string"}},
+			"depth": {Type: "integer", Description: "Max traversal depth for dependency analysis (default: 3)"},
+			"root":  {Type: "string", Description: "Project root directory (default: current dir)"},
 		},
 	}
 }
 
+func (ImpactTool) Parameters() map[string]interface{} {
+	return impactSchema.ToJSONSchema()
+}
+
+// impactSchema is the single source of truth for Impact's input schema.
+var impactSchema = ImpactTool{}.Schema()
+
 func (ImpactTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Files []string `json:"files"`
-		Depth int      `json:"depth"`
-		Root  string   `json:"root"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ImpactInput]("Impact", input)
+	if err != nil {
 		return "", err
 	}
 

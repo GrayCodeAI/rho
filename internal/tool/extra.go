@@ -17,25 +17,37 @@ func (NotebookEditTool) Description() string {
 	return "Edit a Jupyter notebook cell. Specify the notebook path, cell number, and new source."
 }
 
-func (NotebookEditTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path":        map[string]interface{}{"type": "string", "description": "Notebook file path (.ipynb)"},
-			"cell_number": map[string]interface{}{"type": "integer", "description": "Cell number (0-based)"},
-			"new_source":  map[string]interface{}{"type": "string", "description": "New cell source content"},
+// NotebookEditInput is the typed input for NotebookEditTool.
+type NotebookEditInput struct {
+	Path       string `json:"path"`
+	CellNumber int    `json:"cell_number"`
+	NewSource  string `json:"new_source"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (NotebookEditTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":        {Type: "string", Description: "Notebook file path (.ipynb)"},
+			"cell_number": {Type: "integer", Description: "Cell number (0-based)"},
+			"new_source":  {Type: "string", Description: "New cell source content"},
 		},
-		"required": []string{"path", "cell_number", "new_source"},
+		Required: []string{"path", "cell_number", "new_source"},
 	}
 }
 
+func (NotebookEditTool) Parameters() map[string]interface{} {
+	return notebookEditSchema.ToJSONSchema()
+}
+
+// notebookEditSchema is the single source of truth for NotebookEdit's input schema.
+var notebookEditSchema = NotebookEditTool{}.Schema()
+
 func (NotebookEditTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path       string `json:"path"`
-		CellNumber int    `json:"cell_number"`
-		NewSource  string `json:"new_source"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[NotebookEditInput]("NotebookEdit", input)
+	if err != nil {
 		return "", err
 	}
 	if err := validatePathAllowed(ctx, p.Path); err != nil {
@@ -92,25 +104,37 @@ func (ConfigTool) Description() string {
 	return "Read or modify rho configuration settings."
 }
 
-func (ConfigTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{"type": "string", "enum": []string{"get", "set"}, "description": "Action"},
-			"key":    map[string]interface{}{"type": "string", "description": "Setting key"},
-			"value":  map[string]interface{}{"type": "string", "description": "Setting value (for set)"},
+// ConfigInput is the typed input for ConfigTool.
+type ConfigInput struct {
+	Action string `json:"action"`
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ConfigTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Description: "Action", Enum: []interface{}{"get", "set"}},
+			"key":    {Type: "string", Description: "Setting key"},
+			"value":  {Type: "string", Description: "Setting value (for set)"},
 		},
-		"required": []string{"action", "key"},
+		Required: []string{"action", "key"},
 	}
 }
 
+func (ConfigTool) Parameters() map[string]interface{} {
+	return configSchema.ToJSONSchema()
+}
+
+// configSchema is the single source of truth for Config's input schema.
+var configSchema = ConfigTool{}.Schema()
+
 func (ConfigTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Key    string `json:"key"`
-		Value  string `json:"value"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ConfigInput]("Config", input)
+	if err != nil {
 		return "", err
 	}
 	tc := GetToolContext(ctx)

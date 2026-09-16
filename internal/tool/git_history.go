@@ -21,40 +21,39 @@ func (GitHistoryTool) Description() string {
 	return "Mine git history for co-change patterns, file history, and code ownership insights."
 }
 
-func (GitHistoryTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"history", "cochange", "owners", "blame"},
-				"description": "Action: history (commit log), cochange (frequently changed together), owners (top contributors), blame (line-level ownership)",
-			},
-			"file": map[string]interface{}{
-				"type":        "string",
-				"description": "File to analyze",
-			},
-			"limit": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max results (default: 20)",
-			},
-			"root": map[string]interface{}{
-				"type":        "string",
-				"description": "Project root directory (default: current dir)",
-			},
+// GitHistoryInput is the typed input for GitHistoryTool.
+type GitHistoryInput struct {
+	Action string `json:"action"`
+	File   string `json:"file"`
+	Limit  int    `json:"limit"`
+	Root   string `json:"root"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (GitHistoryTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Description: "Action: history (commit log), cochange (frequently changed together), owners (top contributors), blame (line-level ownership)", Enum: []interface{}{"history", "cochange", "owners", "blame"}},
+			"file":   {Type: "string", Description: "File to analyze"},
+			"limit":  {Type: "integer", Description: "Max results (default: 20)"},
+			"root":   {Type: "string", Description: "Project root directory (default: current dir)"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (GitHistoryTool) Parameters() map[string]interface{} {
+	return gitHistorySchema.ToJSONSchema()
+}
+
+// gitHistorySchema is the single source of truth for GitHistory's input schema.
+var gitHistorySchema = GitHistoryTool{}.Schema()
+
 func (GitHistoryTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		File   string `json:"file"`
-		Limit  int    `json:"limit"`
-		Root   string `json:"root"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[GitHistoryInput]("GitHistory", input)
+	if err != nil {
 		return "", err
 	}
 

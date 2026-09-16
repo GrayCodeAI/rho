@@ -26,26 +26,40 @@ func (BatchTool) Description() string {
 	return "Run several read-only tool calls in one turn (fan-out research). Calls must be read-only tools."
 }
 
-func (BatchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"calls": map[string]interface{}{
-				"type":        "array",
-				"description": "Read-only tool calls to execute in sequence",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"tool":  map[string]interface{}{"type": "string", "description": "Read-only tool name (e.g. Read, Grep, Glob, LS, CodeSearch)"},
-						"input": map[string]interface{}{"type": "object", "description": "Tool input object"},
+// BatchInput is the typed input for BatchTool.
+type BatchInput struct {
+	Calls []batchCall `json:"calls"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (BatchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"calls": {
+				Type:        "array",
+				Description: "Read-only tool calls to execute in sequence",
+				Items: &SchemaProperty{
+					Type: "object",
+					Properties: map[string]SchemaProperty{
+						"tool":  {Type: "string", Description: "Read-only tool name (e.g. Read, Grep, Glob, LS, CodeSearch)"},
+						"input": {Type: "object", Description: "Tool input object"},
 					},
-					"required": []string{"tool"},
+					Required: []string{"tool"},
 				},
 			},
 		},
-		"required": []string{"calls"},
+		Required: []string{"calls"},
 	}
 }
+
+func (BatchTool) Parameters() map[string]interface{} {
+	return batchSchema.ToJSONSchema()
+}
+
+// batchSchema is the single source of truth for Batch's input schema.
+var batchSchema = BatchTool{}.Schema()
 
 type batchCall struct {
 	Tool  string          `json:"tool"`
@@ -53,11 +67,9 @@ type batchCall struct {
 }
 
 func (BatchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Calls []batchCall `json:"calls"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("batch: %w", err)
+	p, err := DecodeInput[BatchInput]("Batch", input)
+	if err != nil {
+		return "", err
 	}
 	if len(p.Calls) == 0 {
 		return "", errors.New("batch: calls is required and must not be empty")

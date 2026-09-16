@@ -58,6 +58,12 @@ type SchemaProperty struct {
 	Enum []interface{} `json:"enum,omitempty"`
 	// Items describes the element type for array fields.
 	Items *SchemaProperty `json:"items,omitempty"`
+	// Properties describes the fields of a nested object (used together with
+	// Type "object", e.g. array items that are objects with their own
+	// required fields).
+	Properties map[string]SchemaProperty `json:"properties,omitempty"`
+	// Required lists required field names for a nested object.
+	Required []string `json:"required,omitempty"`
 	// Minimum/Maximum constrain numeric fields. Kept as interface{} (like
 	// Default) so authors write plain literals and the wire output matches
 	// hand-written schemas exactly.
@@ -110,6 +116,16 @@ func (p SchemaProperty) toMap() map[string]interface{} {
 	}
 	if p.Items != nil {
 		m["items"] = p.Items.toMap()
+	}
+	if len(p.Properties) > 0 {
+		props := make(map[string]interface{}, len(p.Properties))
+		for name, sub := range p.Properties {
+			props[name] = sub.toMap()
+		}
+		m["properties"] = props
+	}
+	if len(p.Required) > 0 {
+		m["required"] = p.Required
 	}
 	return m
 }

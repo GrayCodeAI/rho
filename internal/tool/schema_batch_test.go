@@ -175,3 +175,107 @@ func TestFileEditSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [path old_str]", FileEditTool{}.Parameters()["required"])
 	}
 }
+
+func TestBatchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = BatchTool{}
+	props := schemaProps(t, BatchTool{}.Parameters())
+	calls, ok := props["calls"].(map[string]interface{})
+	if !ok || calls["type"] != "array" {
+		t.Fatalf("calls prop = %v, want array type", props["calls"])
+	}
+	items, ok := calls["items"].(map[string]interface{})
+	if !ok || items["type"] != "object" {
+		t.Fatalf("calls items = %v, want object type", calls["items"])
+	}
+	sub, ok := items["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("calls items properties missing")
+	}
+	if sub["tool"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("calls items tool type wrong")
+	}
+	if req, _ := items["required"].([]string); len(req) != 1 || req[0] != "tool" {
+		t.Fatalf("calls items required = %v, want [tool]", items["required"])
+	}
+	req, _ := BatchTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "calls" {
+		t.Fatalf("required = %v, want [calls]", BatchTool{}.Parameters()["required"])
+	}
+}
+
+func TestCronSchemasProvider(t *testing.T) {
+	var _ SchemaProvider = CronCreateTool{}
+	var _ SchemaProvider = CronDeleteTool{}
+	props := schemaProps(t, CronCreateTool{}.Parameters())
+	if props["schedule"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("schedule type wrong")
+	}
+	req, _ := CronCreateTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "schedule" || req[1] != "prompt" {
+		t.Fatalf("required = %v, want [schedule prompt]", CronCreateTool{}.Parameters()["required"])
+	}
+	dprops := schemaProps(t, CronDeleteTool{}.Parameters())
+	if dprops["id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("id type wrong")
+	}
+}
+
+func TestNotebookEditSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = NotebookEditTool{}
+	props := schemaProps(t, NotebookEditTool{}.Parameters())
+	for _, f := range []string{"path", "new_source"} {
+		if props[f].(map[string]interface{})["type"] != "string" {
+			t.Fatalf("%s type wrong", f)
+		}
+	}
+	if props["cell_number"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("cell_number type wrong")
+	}
+}
+
+func TestConfigSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ConfigTool{}
+	props := schemaProps(t, ConfigTool{}.Parameters())
+	action, ok := props["action"].(map[string]interface{})
+	if !ok || action["type"] != "string" {
+		t.Fatalf("action prop = %v, want string type", props["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok || len(enum) != 2 {
+		t.Fatalf("action enum = %v, want [get set]", action["enum"])
+	}
+}
+
+func TestImpactSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ImpactTool{}
+	props := schemaProps(t, ImpactTool{}.Parameters())
+	files, ok := props["files"].(map[string]interface{})
+	if !ok || files["type"] != "array" {
+		t.Fatalf("files prop = %v, want array type", props["files"])
+	}
+	items, ok := files["items"].(map[string]interface{})
+	if !ok || items["type"] != "string" {
+		t.Fatalf("files items = %v, want string type", files["items"])
+	}
+	_, hasRequired := ImpactTool{}.Parameters()["required"]
+	if hasRequired {
+		t.Fatalf("Impact has no required fields, got %v", ImpactTool{}.Parameters()["required"])
+	}
+}
+
+func TestGitHistorySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = GitHistoryTool{}
+	props := schemaProps(t, GitHistoryTool{}.Parameters())
+	action, ok := props["action"].(map[string]interface{})
+	if !ok || action["type"] != "string" {
+		t.Fatalf("action prop = %v, want string type", props["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok || len(enum) != 4 {
+		t.Fatalf("action enum = %v, want 4 options", action["enum"])
+	}
+	req, _ := GitHistoryTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", GitHistoryTool{}.Parameters()["required"])
+	}
+}
