@@ -15,6 +15,14 @@ import (
 type SpecVersionTool struct{}
 
 func (SpecVersionTool) Name() string { return "SpecVersion" }
+
+// SpecVersionInput is the typed input for SpecVersionTool.
+type SpecVersionInput struct {
+	Message      string `json:"message"`
+	DryRun       bool   `json:"dry_run"`
+	IncludeSpecs bool   `json:"include_specs"`
+}
+
 func (SpecVersionTool) Aliases() []string {
 	return []string{"spec_version", "spec:version"}
 }
@@ -23,34 +31,34 @@ func (SpecVersionTool) Description() string {
 	return "Stage and commit spec artifacts alongside code changes. Ensures specs are versioned in git with proper REQ references in commit messages. Use after implementation to commit spec + code together."
 }
 
-func (SpecVersionTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"message": map[string]interface{}{
-				"type":        "string",
-				"description": "Custom commit message (optional, auto-generated if empty)",
-			},
-			"dry_run": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, show what would be committed without actually committing",
-			},
-			"include_specs": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, include .rho/specs/ in the commit (default true)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecVersionTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"message":       {Type: "string", Description: "Custom commit message (optional, auto-generated if empty)"},
+			"dry_run":       {Type: "boolean", Description: "If true, show what would be committed without actually committing"},
+			"include_specs": {Type: "boolean", Description: "If true, include .rho/specs/ in the commit (default true)"},
 		},
 	}
 }
 
+func (SpecVersionTool) Parameters() map[string]interface{} {
+	return specVersionSchema.ToJSONSchema()
+}
+
+// specVersionSchema is the single source of truth for SpecVersion's input schema.
+var specVersionSchema = SpecVersionTool{}.Schema()
+
 func (SpecVersionTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Message      string `json:"message"`
-		DryRun       bool   `json:"dry_run"`
-		IncludeSpecs bool   `json:"include_specs"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecVersionInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecVersionInput]("SpecVersion", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if !p.IncludeSpecs {
 		p.IncludeSpecs = true

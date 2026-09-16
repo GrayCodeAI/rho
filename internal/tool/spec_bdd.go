@@ -14,6 +14,13 @@ import (
 type SpecBddTool struct{}
 
 func (SpecBddTool) Name() string { return "SpecBdd" }
+
+// SpecBddInput is the typed input for SpecBddTool.
+type SpecBddInput struct {
+	Action string `json:"action"`
+	Format string `json:"format"`
+}
+
 func (SpecBddTool) Aliases() []string {
 	return []string{"spec_bdd", "spec:bdd"}
 }
@@ -22,23 +29,24 @@ func (SpecBddTool) Description() string {
 	return "Generate Gherkin/BDD scenarios from requirements. Converts EARS-format requirements into Given/When/Then scenarios for behavior-driven testing. Links scenarios back to requirements for traceability."
 }
 
-func (SpecBddTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: generate (from spec), validate (check coverage), export (to feature files)",
-				"enum":        []string{"generate", "validate", "export"},
-			},
-			"format": map[string]interface{}{
-				"type":        "string",
-				"description": "Output format: gherkin (default), cucumber, pytest-bdd",
-				"enum":        []string{"gherkin", "cucumber", "pytest-bdd"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecBddTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"generate", "validate", "export"}, Description: "Action: generate (from spec), validate (check coverage), export (to feature files)"},
+			"format": {Type: "string", Enum: []interface{}{"gherkin", "cucumber", "pytest-bdd"}, Description: "Output format: gherkin (default), cucumber, pytest-bdd"},
 		},
 	}
 }
+
+func (SpecBddTool) Parameters() map[string]interface{} {
+	return specBddSchema.ToJSONSchema()
+}
+
+// specBddSchema is the single source of truth for SpecBdd's input schema.
+var specBddSchema = SpecBddTool{}.Schema()
 
 type BddScenario struct {
 	Feature  string   `json:"feature"`
@@ -48,11 +56,8 @@ type BddScenario struct {
 }
 
 func (SpecBddTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Format string `json:"format"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecBddInput]("SpecBdd", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {

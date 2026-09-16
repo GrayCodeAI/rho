@@ -13,6 +13,14 @@ import (
 type SpecProvenanceTool struct{}
 
 func (SpecProvenanceTool) Name() string { return "SpecProvenance" }
+
+// SpecProvenanceInput is the typed input for SpecProvenanceTool.
+type SpecProvenanceInput struct {
+	Action string `json:"action"`
+	File   string `json:"file"`
+	Model  string `json:"model"`
+}
+
 func (SpecProvenanceTool) Aliases() []string {
 	return []string{"spec_provenance", "spec:provenance"}
 }
@@ -21,26 +29,25 @@ func (SpecProvenanceTool) Description() string {
 	return "Track provenance of AI-generated code. Records which model, prompt, and session generated each code artifact. Creates audit trails for compliance and debugging."
 }
 
-func (SpecProvenanceTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: record (log generation), show (view history), audit (compliance report)",
-				"enum":        []string{"record", "show", "audit"},
-			},
-			"file": map[string]interface{}{
-				"type":        "string",
-				"description": "File that was generated/modified",
-			},
-			"model": map[string]interface{}{
-				"type":        "string",
-				"description": "AI model used (e.g., claude-sonnet-4, gpt-4)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecProvenanceTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"record", "show", "audit"}, Description: "Action: record (log generation), show (view history), audit (compliance report)"},
+			"file":   {Type: "string", Description: "File that was generated/modified"},
+			"model":  {Type: "string", Description: "AI model used (e.g., claude-sonnet-4, gpt-4)"},
 		},
 	}
 }
+
+func (SpecProvenanceTool) Parameters() map[string]interface{} {
+	return specProvenanceSchema.ToJSONSchema()
+}
+
+// specProvenanceSchema is the single source of truth for SpecProvenance's input schema.
+var specProvenanceSchema = SpecProvenanceTool{}.Schema()
 
 type ProvenanceEntry struct {
 	Timestamp   string `json:"timestamp"`
@@ -52,12 +59,8 @@ type ProvenanceEntry struct {
 }
 
 func (SpecProvenanceTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		File   string `json:"file"`
-		Model  string `json:"model"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecProvenanceInput]("SpecProvenance", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {

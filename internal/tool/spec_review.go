@@ -14,6 +14,12 @@ import (
 type SpecReviewTool struct{}
 
 func (SpecReviewTool) Name() string { return "SpecReview" }
+
+// SpecReviewInput is the typed input for SpecReviewTool.
+type SpecReviewInput struct {
+	Scope string `json:"scope"`
+}
+
 func (SpecReviewTool) Aliases() []string {
 	return []string{"spec_review", "spec:review"}
 }
@@ -22,24 +28,27 @@ func (SpecReviewTool) Description() string {
 	return "Post-implementation review against specs."
 }
 
-func (SpecReviewTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"scope": map[string]interface{}{
-				"type":        "string",
-				"description": "Review scope: spec, diff, full",
-				"enum":        []string{"spec", "diff", "full"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecReviewTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"scope": {Type: "string", Enum: []interface{}{"spec", "diff", "full"}, Description: "Review scope: spec, diff, full"},
 		},
 	}
 }
 
+func (SpecReviewTool) Parameters() map[string]interface{} {
+	return specReviewSchema.ToJSONSchema()
+}
+
+// specReviewSchema is the single source of truth for SpecReview's input schema.
+var specReviewSchema = SpecReviewTool{}.Schema()
+
 func (SpecReviewTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Scope string `json:"scope"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecReviewInput]("SpecReview", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Scope == "" {

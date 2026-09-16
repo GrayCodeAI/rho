@@ -17,6 +17,13 @@ import (
 type SpecGroundTool struct{}
 
 func (SpecGroundTool) Name() string { return "SpecGround" }
+
+// SpecGroundInput is the typed input for SpecGroundTool.
+type SpecGroundInput struct {
+	Stage string `json:"stage"`
+	Query string `json:"query"`
+}
+
 func (SpecGroundTool) Aliases() []string {
 	return []string{"spec_ground", "spec:ground"}
 }
@@ -25,30 +32,30 @@ func (SpecGroundTool) Description() string {
 	return "Gather repository context to ground the current spec stage. Probes the codebase for relevant files, patterns, dependencies, and API contracts. Use before Specify, Design, or Plan to ensure the LLM has full context."
 }
 
-func (SpecGroundTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"stage": map[string]interface{}{
-				"type":        "string",
-				"description": "Which stage to gather context for: specify, design, plan, tasks, implement",
-				"enum":        []string{"specify", "design", "plan", "tasks", "implement"},
-			},
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional focus area to narrow the search (e.g., 'auth', 'database', 'API')",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecGroundTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"stage": {Type: "string", Enum: []interface{}{"specify", "design", "plan", "tasks", "implement"}, Description: "Which stage to gather context for: specify, design, plan, tasks, implement"},
+			"query": {Type: "string", Description: "Optional focus area to narrow the search (e.g., 'auth', 'database', 'API')"},
 		},
-		"required": []string{"stage"},
+
+		Required: []string{"stage"},
 	}
 }
 
+func (SpecGroundTool) Parameters() map[string]interface{} {
+	return specGroundSchema.ToJSONSchema()
+}
+
+// specGroundSchema is the single source of truth for SpecGround's input schema.
+var specGroundSchema = SpecGroundTool{}.Schema()
+
 func (SpecGroundTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Stage string `json:"stage"`
-		Query string `json:"query"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecGroundInput]("SpecGround", input)
+	if err != nil {
 		return "", err
 	}
 

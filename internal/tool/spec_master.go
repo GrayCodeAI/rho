@@ -15,6 +15,12 @@ import (
 type SpecMasterTool struct{}
 
 func (SpecMasterTool) Name() string { return "SpecMaster" }
+
+// SpecMasterInput is the typed input for SpecMasterTool.
+type SpecMasterInput struct {
+	Action string `json:"action"`
+}
+
 func (SpecMasterTool) Aliases() []string {
 	return []string{"spec_master", "spec:master"}
 }
@@ -23,25 +29,29 @@ func (SpecMasterTool) Description() string {
 	return "Generate or update MASTER.md progress index for cross-session continuity. Captures current spec state, completed tasks, pending work, and key decisions so work can resume across sessions."
 }
 
-func (SpecMasterTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: read (show current), update (regenerate), resume (load state for continuation)",
-				"enum":        []string{"read", "update", "resume"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecMasterTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"read", "update", "resume"}, Description: "Action: read (show current), update (regenerate), resume (load state for continuation)"},
 		},
-		"required": []string{"action"},
+
+		Required: []string{"action"},
 	}
 }
 
+func (SpecMasterTool) Parameters() map[string]interface{} {
+	return specMasterSchema.ToJSONSchema()
+}
+
+// specMasterSchema is the single source of truth for SpecMaster's input schema.
+var specMasterSchema = SpecMasterTool{}.Schema()
+
 func (SpecMasterTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecMasterInput]("SpecMaster", input)
+	if err != nil {
 		return "", err
 	}
 

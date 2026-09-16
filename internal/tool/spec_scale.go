@@ -12,6 +12,12 @@ import (
 type SpecScaleTool struct{}
 
 func (SpecScaleTool) Name() string { return "SpecScale" }
+
+// SpecScaleInput is the typed input for SpecScaleTool.
+type SpecScaleInput struct {
+	ScanDir string `json:"scan_dir"`
+}
+
 func (SpecScaleTool) Aliases() []string {
 	return []string{"spec_scale", "spec:scale"}
 }
@@ -20,17 +26,23 @@ func (SpecScaleTool) Description() string {
 	return "Determine project complexity and recommend planning depth. Analyzes codebase size, change scope, dependency count, and risk to recommend Quick (bug fix), Standard (feature), or Enterprise (architecture) planning track."
 }
 
-func (SpecScaleTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"scan_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory to scan (default: current directory)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecScaleTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"scan_dir": {Type: "string", Description: "Directory to scan (default: current directory)"},
 		},
 	}
 }
+
+func (SpecScaleTool) Parameters() map[string]interface{} {
+	return specScaleSchema.ToJSONSchema()
+}
+
+// specScaleSchema is the single source of truth for SpecScale's input schema.
+var specScaleSchema = SpecScaleTool{}.Schema()
 
 type ComplexityAssessment struct {
 	Level        int      `json:"level"`
@@ -43,10 +55,8 @@ type ComplexityAssessment struct {
 }
 
 func (SpecScaleTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ScanDir string `json:"scan_dir"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecScaleInput]("SpecScale", input)
+	if err != nil {
 		return "", err
 	}
 	if p.ScanDir == "" {

@@ -104,28 +104,42 @@ func writeSpecArtifactInDir(dir, filename, content string) (string, error) {
 // Proposal; can run in parallel with Design.
 type SpecifyTool struct{}
 
-func (SpecifyTool) Name() string      { return "Specify" }
+func (SpecifyTool) Name() string { return "Specify" }
+
+// SpecifyInput is the typed input for SpecifyTool.
+type SpecifyInput struct {
+	Title string `json:"title"`
+	Spec  string `json:"spec"`
+}
+
 func (SpecifyTool) Aliases() []string { return []string{"specify"} }
 func (SpecifyTool) Description() string {
 	return "Write spec.md describing requirements and constraints. Call after Proposal, can run in parallel with Design. Write/Edit/Bash stay blocked until ApproveImplementation."
 }
 
-func (SpecifyTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"spec": map[string]interface{}{"type": "string", "description": "The spec content: problem statement, requirements, constraints"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecifyTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"spec": {Type: "string", Description: "The spec content: problem statement, requirements, constraints"},
 		},
-		"required": []string{"spec"},
+
+		Required: []string{"spec"},
 	}
 }
 
+func (SpecifyTool) Parameters() map[string]interface{} {
+	return specifySchema.ToJSONSchema()
+}
+
+// specifySchema is the single source of truth for Specify's input schema.
+var specifySchema = SpecifyTool{}.Schema()
+
 func (SpecifyTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Title string `json:"title"`
-		Spec  string `json:"spec"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecifyInput]("Specify", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.Spec) == "" {
@@ -156,27 +170,41 @@ func (SpecifyTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 // Specify and Design to be complete.
 type PlanTool struct{}
 
-func (PlanTool) Name() string      { return "Plan" }
+func (PlanTool) Name() string { return "Plan" }
+
+// PlanInput is the typed input for PlanTool.
+type PlanInput struct {
+	Plan string `json:"plan"`
+}
+
 func (PlanTool) Aliases() []string { return []string{"plan"} }
 func (PlanTool) Description() string {
 	return "Write plan.md describing the implementation approach. Call after both Specify and Design are complete."
 }
 
-func (PlanTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"plan": map[string]interface{}{"type": "string", "description": "The technical approach: architecture, files to change, key decisions"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (PlanTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"plan": {Type: "string", Description: "The technical approach: architecture, files to change, key decisions"},
 		},
-		"required": []string{"plan"},
+
+		Required: []string{"plan"},
 	}
 }
 
+func (PlanTool) Parameters() map[string]interface{} {
+	return planSchema.ToJSONSchema()
+}
+
+// planSchema is the single source of truth for Plan's input schema.
+var planSchema = PlanTool{}.Schema()
+
 func (PlanTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Plan string `json:"plan"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[PlanInput]("Plan", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.Plan) == "" {
@@ -192,27 +220,41 @@ func (PlanTool) Execute(ctx context.Context, input json.RawMessage) (string, err
 // TasksTool writes tasks.md — the implementation breakdown for an active spec.
 type TasksTool struct{}
 
-func (TasksTool) Name() string      { return "Tasks" }
+func (TasksTool) Name() string { return "Tasks" }
+
+// TasksInput is the typed input for TasksTool.
+type TasksInput struct {
+	Tasks string `json:"tasks"`
+}
+
 func (TasksTool) Aliases() []string { return []string{"tasks"} }
 func (TasksTool) Description() string {
 	return "Write tasks.md breaking the plan into concrete implementation steps. Each task should reference REQ-XXX.Y.Z IDs from the spec. Call after Plan."
 }
 
-func (TasksTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"tasks": map[string]interface{}{"type": "string", "description": "The task breakdown, as a list"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TasksTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"tasks": {Type: "string", Description: "The task breakdown, as a list"},
 		},
-		"required": []string{"tasks"},
+
+		Required: []string{"tasks"},
 	}
 }
 
+func (TasksTool) Parameters() map[string]interface{} {
+	return tasksSchema.ToJSONSchema()
+}
+
+// tasksSchema is the single source of truth for Tasks's input schema.
+var tasksSchema = TasksTool{}.Schema()
+
 func (TasksTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Tasks string `json:"tasks"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TasksInput]("Tasks", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.Tasks) == "" {
@@ -237,9 +279,21 @@ func (ApproveImplementationTool) Description() string {
 	return "Ask the user to approve moving from spec to implementation. Only after approval will Write/Edit/Bash be permitted. Call this once spec.md, plan.md, and tasks.md are all written."
 }
 
-func (ApproveImplementationTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ApproveImplementationTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type:       "object",
+		Properties: map[string]SchemaProperty{},
+	}
 }
+
+func (ApproveImplementationTool) Parameters() map[string]interface{} {
+	return approveImplementationSchema.ToJSONSchema()
+}
+
+// approveImplementationSchema is the single source of truth for ApproveImplementation's input schema.
+var approveImplementationSchema = ApproveImplementationTool{}.Schema()
 
 func (ApproveImplementationTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
 	return "Approved. You may now implement the plan and make changes.", nil
@@ -248,27 +302,44 @@ func (ApproveImplementationTool) Execute(_ context.Context, _ json.RawMessage) (
 // SpecStatusTool reports the current spec stage and the status of all spec artifacts.
 type SpecStatusTool struct{}
 
-func (SpecStatusTool) Name() string      { return "SpecStatus" }
+func (SpecStatusTool) Name() string { return "SpecStatus" }
+
+// SpecStatusInput is the typed input for SpecStatusTool.
+type SpecStatusInput struct {
+	Slug string `json:"slug"`
+}
+
 func (SpecStatusTool) Aliases() []string { return []string{"spec_status"} }
 func (SpecStatusTool) Description() string {
 	return "Show the current spec stage and validation status of spec artifacts (spec.md, plan.md, tasks.md). Use this to check progress in the spec workflow."
 }
 
-func (SpecStatusTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"slug": map[string]interface{}{"type": "string", "description": "Optional: check a specific spec slug instead of the active one"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecStatusTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"slug": {Type: "string", Description: "Optional: check a specific spec slug instead of the active one"},
 		},
 	}
 }
 
+func (SpecStatusTool) Parameters() map[string]interface{} {
+	return specStatusSchema.ToJSONSchema()
+}
+
+// specStatusSchema is the single source of truth for SpecStatus's input schema.
+var specStatusSchema = SpecStatusTool{}.Schema()
+
 func (SpecStatusTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Slug string `json:"slug"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecStatusInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecStatusInput]("SpecStatus", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 
 	var slug string
@@ -450,41 +521,45 @@ func countUncheckedTasks(content string) int {
 // SpecEditTool modifies the active spec by applying a delta spec or replacing artifact content.
 type SpecEditTool struct{}
 
-func (SpecEditTool) Name() string      { return "SpecEdit" }
+func (SpecEditTool) Name() string { return "SpecEdit" }
+
+// SpecEditInput is the typed input for SpecEditTool.
+type SpecEditInput struct {
+	Artifact string `json:"artifact"`
+	Delta    string `json:"delta"`
+	Content  string `json:"content"`
+}
+
 func (SpecEditTool) Aliases() []string { return []string{"spec_edit"} }
 func (SpecEditTool) Description() string {
 	return "Edit the active spec: apply a delta (ADDED/MODIFIED/REMOVED/RENAMED requirements) to spec.md, or replace an artifact entirely with new content. Call this to refine requirements without starting over."
 }
 
-func (SpecEditTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"artifact": map[string]interface{}{
-				"type":        "string",
-				"description": "Which file to edit: spec.md, plan.md, tasks.md, or specs.md",
-				"enum":        []string{"spec.md", "plan.md", "tasks.md", "specs.md"},
-			},
-			"delta": map[string]interface{}{
-				"type":        "string",
-				"description": "Delta spec content with ## ADDED/MODIFIED/REMOVED/RENAMED Requirements sections. Applies structured changes to the artifact.",
-			},
-			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "Full replacement content for the artifact (replaces the entire file). Use this instead of delta for wholesale changes.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecEditTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"artifact": {Type: "string", Enum: []interface{}{"spec.md", "plan.md", "tasks.md", "specs.md"}, Description: "Which file to edit: spec.md, plan.md, tasks.md, or specs.md"},
+			"delta":    {Type: "string", Description: "Delta spec content with ## ADDED/MODIFIED/REMOVED/RENAMED Requirements sections. Applies structured changes to the artifact."},
+			"content":  {Type: "string", Description: "Full replacement content for the artifact (replaces the entire file). Use this instead of delta for wholesale changes."},
 		},
-		"required": []string{"artifact"},
+
+		Required: []string{"artifact"},
 	}
 }
 
+func (SpecEditTool) Parameters() map[string]interface{} {
+	return specEditSchema.ToJSONSchema()
+}
+
+// specEditSchema is the single source of truth for SpecEdit's input schema.
+var specEditSchema = SpecEditTool{}.Schema()
+
 func (SpecEditTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Artifact string `json:"artifact"`
-		Delta    string `json:"delta"`
-		Content  string `json:"content"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecEditInput]("SpecEdit", input)
+	if err != nil {
 		return "", err
 	}
 
@@ -564,18 +639,34 @@ func (SpecEditTool) Execute(ctx context.Context, input json.RawMessage) (string,
 // SpecListTool lists all spec workflows with their current stage.
 type SpecListTool struct{}
 
-func (SpecListTool) Name() string      { return "SpecList" }
+func (SpecListTool) Name() string { return "SpecList" }
+
+// SpecResetInput is the typed input for SpecResetTool.
+type SpecResetInput struct {
+	Slug   string `json:"slug"`
+	Delete bool   `json:"delete"`
+}
+
 func (SpecListTool) Aliases() []string { return []string{"spec_list"} }
 func (SpecListTool) Description() string {
 	return "List all spec workflows in .rho/specs/ with their stage and title. Useful for finding existing specs to resume."
 }
 
-func (SpecListTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecListTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type:       "object",
+		Properties: map[string]SchemaProperty{},
 	}
 }
+
+func (SpecListTool) Parameters() map[string]interface{} {
+	return specListSchema.ToJSONSchema()
+}
+
+// specListSchema is the single source of truth for SpecList's input schema.
+var specListSchema = SpecListTool{}.Schema()
 
 func (SpecListTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
 	metas, err := spec.ListSpecs()
@@ -620,23 +711,33 @@ func (SpecResetTool) Description() string {
 	return "Reset/delete the active spec workflow. Clears the spec stage so Write/Edit/Bash follow the trust tier again. Optionally delete the spec artifacts entirely."
 }
 
-func (SpecResetTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"slug":   map[string]interface{}{"type": "string", "description": "Optional: target a specific slug instead of the active one"},
-			"delete": map[string]interface{}{"type": "boolean", "description": "If true, delete the spec artifacts from disk"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecResetTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"slug":   {Type: "string", Description: "Optional: target a specific slug instead of the active one"},
+			"delete": {Type: "boolean", Description: "If true, delete the spec artifacts from disk"},
 		},
 	}
 }
 
+func (SpecResetTool) Parameters() map[string]interface{} {
+	return specResetSchema.ToJSONSchema()
+}
+
+// specResetSchema is the single source of truth for SpecReset's input schema.
+var specResetSchema = SpecResetTool{}.Schema()
+
 func (SpecResetTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Slug   string `json:"slug"`
-		Delete bool   `json:"delete"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecResetInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecResetInput]("SpecReset", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 
 	var slug string
@@ -683,41 +784,45 @@ func specsDir() (string, error) {
 // SpecConfigTool allows the agent to read and update spec configuration.
 type SpecConfigTool struct{}
 
-func (SpecConfigTool) Name() string      { return "SpecConfig" }
+func (SpecConfigTool) Name() string { return "SpecConfig" }
+
+// SpecConfigInput is the typed input for SpecConfigTool.
+type SpecConfigInput struct {
+	Action string `json:"action"`
+	Field  string `json:"field"`
+	Value  string `json:"value"`
+}
+
 func (SpecConfigTool) Aliases() []string { return []string{"spec_config"} }
 func (SpecConfigTool) Description() string {
 	return "Read or update spec configuration (language, framework, methodology, architecture). Call this to check preferences before writing specs, or to update config as needed."
 }
 
-func (SpecConfigTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "'get' to read config, 'set' to update, 'list' to show available fields",
-				"enum":        []string{"get", "set", "list"},
-			},
-			"field": map[string]interface{}{
-				"type":        "string",
-				"description": "The config field to update (required for 'set'). One of: language, framework, methodology, architecture, repo_structure, custom_prompt",
-			},
-			"value": map[string]interface{}{
-				"type":        "string",
-				"description": "The new value for the field. Use 'ai' to let the AI decide.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecConfigTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"get", "set", "list"}, Description: "'get' to read config, 'set' to update, 'list' to show available fields"},
+			"field":  {Type: "string", Description: "The config field to update (required for 'set'). One of: language, framework, methodology, architecture, repo_structure, custom_prompt"},
+			"value":  {Type: "string", Description: "The new value for the field. Use 'ai' to let the AI decide."},
 		},
-		"required": []string{"action"},
+
+		Required: []string{"action"},
 	}
 }
 
+func (SpecConfigTool) Parameters() map[string]interface{} {
+	return specConfigSchema.ToJSONSchema()
+}
+
+// specConfigSchema is the single source of truth for SpecConfig's input schema.
+var specConfigSchema = SpecConfigTool{}.Schema()
+
 func (SpecConfigTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Field  string `json:"field"`
-		Value  string `json:"value"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecConfigInput]("SpecConfig", input)
+	if err != nil {
 		return "", err
 	}
 
@@ -793,29 +898,43 @@ func firstLine(s string) string {
 // document that establishes the problem and goals before any technical work.
 type ProposalTool struct{}
 
-func (ProposalTool) Name() string      { return "Proposal" }
+func (ProposalTool) Name() string { return "Proposal" }
+
+// ProposalInput is the typed input for ProposalTool.
+type ProposalInput struct {
+	Title    string `json:"title"`
+	Proposal string `json:"proposal"`
+}
+
 func (ProposalTool) Aliases() []string { return []string{"proposal"} }
 func (ProposalTool) Description() string {
 	return "Write proposal.md outlining WHY this change is needed. Call this first to start a spec-driven workflow."
 }
 
-func (ProposalTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"title":    map[string]interface{}{"type": "string", "description": "Short title for this spec, used to name its directory"},
-			"proposal": map[string]interface{}{"type": "string", "description": "The proposal content: problem statement, goals, out of scope, success criteria"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ProposalTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"title":    {Type: "string", Description: "Short title for this spec, used to name its directory"},
+			"proposal": {Type: "string", Description: "The proposal content: problem statement, goals, out of scope, success criteria"},
 		},
-		"required": []string{"proposal"},
+
+		Required: []string{"proposal"},
 	}
 }
 
+func (ProposalTool) Parameters() map[string]interface{} {
+	return proposalSchema.ToJSONSchema()
+}
+
+// proposalSchema is the single source of truth for Proposal's input schema.
+var proposalSchema = ProposalTool{}.Schema()
+
 func (ProposalTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Title    string `json:"title"`
-		Proposal string `json:"proposal"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ProposalInput]("Proposal", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.Proposal) == "" {
@@ -843,27 +962,41 @@ func (ProposalTool) Execute(ctx context.Context, input json.RawMessage) (string,
 // Can run in parallel with Specify after Proposal completes.
 type DesignTool struct{}
 
-func (DesignTool) Name() string      { return "Design" }
+func (DesignTool) Name() string { return "Design" }
+
+// DesignInput is the typed input for DesignTool.
+type DesignInput struct {
+	Design string `json:"design"`
+}
+
 func (DesignTool) Aliases() []string { return []string{"design"} }
 func (DesignTool) Description() string {
 	return "Write design.md describing the technical approach. Call after Proposal, can run in parallel with Specify."
 }
 
-func (DesignTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"design": map[string]interface{}{"type": "string", "description": "The technical design: architecture, data flow, key decisions, components, interfaces"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (DesignTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"design": {Type: "string", Description: "The technical design: architecture, data flow, key decisions, components, interfaces"},
 		},
-		"required": []string{"design"},
+
+		Required: []string{"design"},
 	}
 }
 
+func (DesignTool) Parameters() map[string]interface{} {
+	return designSchema.ToJSONSchema()
+}
+
+// designSchema is the single source of truth for Design's input schema.
+var designSchema = DesignTool{}.Schema()
+
 func (DesignTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Design string `json:"design"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[DesignInput]("Design", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.Design) == "" {

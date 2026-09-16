@@ -14,6 +14,13 @@ import (
 type SpecTestGenTool struct{}
 
 func (SpecTestGenTool) Name() string { return "SpecTestGen" }
+
+// SpecTestGenInput is the typed input for SpecTestGenTool.
+type SpecTestGenInput struct {
+	ScanDir  string `json:"scan_dir"`
+	Language string `json:"language"`
+}
+
 func (SpecTestGenTool) Aliases() []string {
 	return []string{"spec_testgen", "spec:testgen"}
 }
@@ -22,29 +29,28 @@ func (SpecTestGenTool) Description() string {
 	return "Generate test stubs from requirements in spec.md. Creates test functions for each REQ-XXX.Y.Z requirement."
 }
 
-func (SpecTestGenTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"scan_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory to scan (default: current directory)",
-			},
-			"language": map[string]interface{}{
-				"type":        "string",
-				"description": "Language: go, ts, py (default: auto-detect)",
-				"enum":        []string{"go", "ts", "py"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecTestGenTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"scan_dir": {Type: "string", Description: "Directory to scan (default: current directory)"},
+			"language": {Type: "string", Enum: []interface{}{"go", "ts", "py"}, Description: "Language: go, ts, py (default: auto-detect)"},
 		},
 	}
 }
 
+func (SpecTestGenTool) Parameters() map[string]interface{} {
+	return specTestGenSchema.ToJSONSchema()
+}
+
+// specTestGenSchema is the single source of truth for SpecTestGen's input schema.
+var specTestGenSchema = SpecTestGenTool{}.Schema()
+
 func (SpecTestGenTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ScanDir  string `json:"scan_dir"`
-		Language string `json:"language"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecTestGenInput]("SpecTestGen", input)
+	if err != nil {
 		return "", err
 	}
 	if p.ScanDir == "" {

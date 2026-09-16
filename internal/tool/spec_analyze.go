@@ -24,12 +24,20 @@ func (AnalyzeTool) Description() string {
 	return "Analyze the active spec for cross-artifact consistency: check that spec requirements are covered by plan and tasks, identify orphaned work, and report quality issues. Read-only analysis — does not modify any files."
 }
 
-func (AnalyzeTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (AnalyzeTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
 	}
 }
+
+func (AnalyzeTool) Parameters() map[string]interface{} {
+	return analyzeSchema.ToJSONSchema()
+}
+
+// analyzeSchema is the single source of truth for Analyze's input schema.
+var analyzeSchema = AnalyzeTool{}.Schema()
 
 func (AnalyzeTool) Execute(ctx context.Context, _ json.RawMessage) (string, error) {
 	dir, err := specDir(ctx)

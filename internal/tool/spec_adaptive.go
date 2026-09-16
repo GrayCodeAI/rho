@@ -14,6 +14,16 @@ import (
 type SpecAdaptiveTool struct{}
 
 func (SpecAdaptiveTool) Name() string { return "SpecAdaptive" }
+
+// SpecAdaptiveInput is the typed input for SpecAdaptiveTool.
+type SpecAdaptiveInput struct {
+	TaskID          string  `json:"task_id"`
+	EstimatedEffort int     `json:"estimated_effort"`
+	ActualEffort    int     `json:"actual_effort"`
+	UnplannedDeps   int     `json:"unplanned_deps"`
+	SuperScore      float64 `json:"super_score"`
+}
+
 func (SpecAdaptiveTool) Aliases() []string {
 	return []string{"spec_adaptive", "spec:adaptive"}
 }
@@ -22,34 +32,29 @@ func (SpecAdaptiveTool) Description() string {
 	return "Collect execution telemetry and compute drift score. Compares actual effort vs estimated, S.U.P.E.R compliance, and unplanned dependencies. Returns drift level (none/mild/significant/severe) and recommended corrective action."
 }
 
-func (SpecAdaptiveTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"task_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Task identifier that was just completed",
-			},
-			"estimated_effort": map[string]interface{}{
-				"type":        "integer",
-				"description": "Estimated effort in minutes",
-			},
-			"actual_effort": map[string]interface{}{
-				"type":        "integer",
-				"description": "Actual effort in minutes",
-			},
-			"unplanned_deps": map[string]interface{}{
-				"type":        "integer",
-				"description": "Number of unplanned dependencies encountered",
-			},
-			"super_score": map[string]interface{}{
-				"type":        "number",
-				"description": "S.U.P.E.R compliance score 0.0-1.0",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecAdaptiveTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"task_id":          {Type: "string", Description: "Task identifier that was just completed"},
+			"estimated_effort": {Type: "integer", Description: "Estimated effort in minutes"},
+			"actual_effort":    {Type: "integer", Description: "Actual effort in minutes"},
+			"unplanned_deps":   {Type: "integer", Description: "Number of unplanned dependencies encountered"},
+			"super_score":      {Type: "number", Description: "S.U.P.E.R compliance score 0.0-1.0"},
 		},
-		"required": []string{"task_id"},
+
+		Required: []string{"task_id"},
 	}
 }
+
+func (SpecAdaptiveTool) Parameters() map[string]interface{} {
+	return specAdaptiveSchema.ToJSONSchema()
+}
+
+// specAdaptiveSchema is the single source of truth for SpecAdaptive's input schema.
+var specAdaptiveSchema = SpecAdaptiveTool{}.Schema()
 
 type AdaptiveResult struct {
 	DriftScore     float64 `json:"drift_score"`
@@ -58,14 +63,8 @@ type AdaptiveResult struct {
 }
 
 func (SpecAdaptiveTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID          string  `json:"task_id"`
-		EstimatedEffort int     `json:"estimated_effort"`
-		ActualEffort    int     `json:"actual_effort"`
-		UnplannedDeps   int     `json:"unplanned_deps"`
-		SuperScore      float64 `json:"super_score"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecAdaptiveInput]("SpecAdaptive", input)
+	if err != nil {
 		return "", err
 	}
 

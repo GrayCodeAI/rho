@@ -16,6 +16,13 @@ import (
 type ConstitutionTool struct{}
 
 func (ConstitutionTool) Name() string { return "Constitution" }
+
+// ConstitutionInput is the typed input for ConstitutionTool.
+type ConstitutionInput struct {
+	Action string `json:"action"`
+	Rules  string `json:"rules"`
+}
+
 func (ConstitutionTool) Aliases() []string {
 	return []string{"constitution", "spec_constitution", "spec:constitution"}
 }
@@ -24,30 +31,30 @@ func (ConstitutionTool) Description() string {
 	return "Read or update the project constitution — non-negotiable rules that all specs must follow. Use 'get' to read, 'set' to update, 'init' to create from template, 'validate' to check a spec against constitution rules."
 }
 
-func (ConstitutionTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action to perform: get (read), set (update rules), init (create from template), validate (check spec against rules)",
-				"enum":        []string{"get", "set", "init", "validate"},
-			},
-			"rules": map[string]interface{}{
-				"type":        "string",
-				"description": "Constitution rules content (required for 'set' action)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ConstitutionTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"get", "set", "init", "validate"}, Description: "Action to perform: get (read), set (update rules), init (create from template), validate (check spec against rules)"},
+			"rules":  {Type: "string", Description: "Constitution rules content (required for 'set' action)"},
 		},
-		"required": []string{"action"},
+
+		Required: []string{"action"},
 	}
 }
 
+func (ConstitutionTool) Parameters() map[string]interface{} {
+	return constitutionSchema.ToJSONSchema()
+}
+
+// constitutionSchema is the single source of truth for Constitution's input schema.
+var constitutionSchema = ConstitutionTool{}.Schema()
+
 func (ConstitutionTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Rules  string `json:"rules"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ConstitutionInput]("Constitution", input)
+	if err != nil {
 		return "", err
 	}
 
