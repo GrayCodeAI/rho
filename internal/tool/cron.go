@@ -353,12 +353,19 @@ type CronListTool struct{}
 func (CronListTool) Name() string        { return "CronList" }
 func (CronListTool) Aliases() []string   { return []string{"cron_list"} }
 func (CronListTool) Description() string { return "List all scheduled cron jobs" }
-func (CronListTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (CronListTool) Schema() ToolSchema {
+	return ToolSchema{Type: "object", Properties: map[string]SchemaProperty{}}
 }
+
+func (CronListTool) Parameters() map[string]interface{} {
+	return cronListSchema.ToJSONSchema()
+}
+
+// cronListSchema is the single source of truth for CronList's input schema.
+var cronListSchema = CronListTool{}.Schema()
 
 func (CronListTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
 	jobs := globalCronScheduler.List()

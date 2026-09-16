@@ -165,42 +165,43 @@ func (ConfigTool) Execute(ctx context.Context, input json.RawMessage) (string, e
 // Text outside this tool is visible in the detail view; the answer lives here.
 type BriefTool struct{}
 
+// BriefInput is the typed input for BriefTool.
+type BriefInput struct {
+	Message     string   `json:"message"`
+	Attachments []string `json:"attachments"`
+	Status      string   `json:"status"`
+}
+
 func (BriefTool) Name() string      { return "SendUserMessage" }
 func (BriefTool) Aliases() []string { return []string{"brief", "Brief"} }
 func (BriefTool) Description() string {
 	return "Send a message to the user. Supports markdown. Use 'proactive' status when surfacing something the user hasn't asked for."
 }
 
-func (BriefTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"message": map[string]interface{}{
-				"type":        "string",
-				"description": "The message for the user. Supports markdown formatting.",
-			},
-			"attachments": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Optional file paths to attach (images, diffs, logs)",
-			},
-			"status": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"normal", "proactive"},
-				"description": "Use 'proactive' when surfacing something the user hasn't asked for",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (BriefTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"message":     {Type: "string", Description: "The message for the user. Supports markdown formatting."},
+			"attachments": {Type: "array", Items: &SchemaProperty{Type: "string"}, Description: "Optional file paths to attach (images, diffs, logs)"},
+			"status":      {Type: "string", Enum: []interface{}{"normal", "proactive"}, Description: "Use 'proactive' when surfacing something the user hasn't asked for"},
 		},
-		"required": []string{"message"},
+		Required: []string{"message"},
 	}
 }
 
+func (BriefTool) Parameters() map[string]interface{} {
+	return briefSchema.ToJSONSchema()
+}
+
+// briefSchema is the single source of truth for Brief's input schema.
+var briefSchema = BriefTool{}.Schema()
+
 func (BriefTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Message     string   `json:"message"`
-		Attachments []string `json:"attachments"`
-		Status      string   `json:"status"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[BriefInput]("SendUserMessage", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Message == "" {

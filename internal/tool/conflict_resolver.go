@@ -518,42 +518,44 @@ func describeResolution(c *Conflict) string {
 // ConflictResolverTool resolves git merge conflicts in files.
 type ConflictResolverTool struct{}
 
+// ConflictResolverInput is the typed input for ConflictResolverTool.
+type ConflictResolverInput struct {
+	Path     string `json:"path"`
+	Strategy string `json:"strategy"`
+	DryRun   bool   `json:"dry_run"`
+}
+
 func (ConflictResolverTool) Name() string { return "ResolveConflicts" }
 
 func (ConflictResolverTool) Description() string {
 	return "Automatically resolve git merge conflicts in files. Supports smart resolution strategies including import merging, additive merging, and trivial conflict resolution."
 }
 
-func (ConflictResolverTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Absolute path to the file with merge conflicts",
-			},
-			"strategy": map[string]interface{}{
-				"type":        "string",
-				"description": "Resolution strategy: 'smart' (default), 'ours', or 'theirs'",
-				"enum":        []string{"smart", "ours", "theirs"},
-			},
-			"dry_run": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, show resolution plan without modifying the file",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ConflictResolverTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":     {Type: "string", Description: "Absolute path to the file with merge conflicts"},
+			"strategy": {Type: "string", Enum: []interface{}{"smart", "ours", "theirs"}, Description: "Resolution strategy: 'smart' (default), 'ours', or 'theirs'"},
+			"dry_run":  {Type: "boolean", Description: "If true, show resolution plan without modifying the file"},
 		},
-		"required": []string{"path"},
+		Required: []string{"path"},
 	}
 }
 
+func (ConflictResolverTool) Parameters() map[string]interface{} {
+	return conflictResolverSchema.ToJSONSchema()
+}
+
+// conflictResolverSchema is the single source of truth for ConflictResolver's input schema.
+var conflictResolverSchema = ConflictResolverTool{}.Schema()
+
 func (ConflictResolverTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path     string `json:"path"`
-		Strategy string `json:"strategy"`
-		DryRun   bool   `json:"dry_run"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[ConflictResolverInput]("ConflictResolver", input)
+	if err != nil {
+		return "", err
 	}
 	if p.Path == "" {
 		return "", fmt.Errorf("path is required")

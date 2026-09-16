@@ -372,3 +372,109 @@ func TestOutlineSchemaProvider(t *testing.T) {
 		t.Fatalf("Outline has no required fields, got %v", OutlineTool{}.Parameters()["required"])
 	}
 }
+
+func TestCronListSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = CronListTool{}
+	props := schemaProps(t, CronListTool{}.Parameters())
+	if len(props) != 0 {
+		t.Fatalf("CronList has no inputs, got %v", props)
+	}
+	_, hasRequired := CronListTool{}.Parameters()["required"]
+	if hasRequired {
+		t.Fatalf("CronList has no required fields, got %v", CronListTool{}.Parameters()["required"])
+	}
+}
+
+func TestBriefSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = BriefTool{}
+	props := schemaProps(t, BriefTool{}.Parameters())
+	for field, want := range map[string]string{"message": "string", "status": "string"} {
+		if props[field].(map[string]interface{})["type"] != want {
+			t.Fatalf("%s type = %v, want %s", field, props[field], want)
+		}
+	}
+	att, ok := props["attachments"].(map[string]interface{})
+	if !ok || att["type"] != "array" {
+		t.Fatalf("attachments prop = %v, want array", props["attachments"])
+	}
+	if att["items"].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("attachments items = %v, want string", att["items"])
+	}
+	enum, ok := props["status"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "normal" || enum[1] != "proactive" {
+		t.Fatalf("status enum = %v, want [normal proactive]", props["status"])
+	}
+	req, _ := BriefTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "message" {
+		t.Fatalf("required = %v, want [message]", BriefTool{}.Parameters()["required"])
+	}
+}
+
+func TestAPICompatSchemaProvider(t *testing.T) {
+	compat := &APICompatTool{}
+	var _ SchemaProvider = compat
+	props := schemaProps(t, compat.Parameters())
+	for field, want := range map[string]string{"package_path": "string", "baseline_path": "string", "save_baseline": "boolean"} {
+		if props[field].(map[string]interface{})["type"] != want {
+			t.Fatalf("%s type = %v, want %s", field, props[field], want)
+		}
+	}
+	req, _ := compat.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "package_path" {
+		t.Fatalf("required = %v, want [package_path]", compat.Parameters()["required"])
+	}
+}
+
+func TestAutoImportSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = AutoImportTool{}
+	props := schemaProps(t, AutoImportTool{}.Parameters())
+	for field, want := range map[string]string{"code": "string", "file": "string", "apply": "boolean"} {
+		if props[field].(map[string]interface{})["type"] != want {
+			t.Fatalf("%s type = %v, want %s", field, props[field], want)
+		}
+	}
+	req, _ := AutoImportTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "code" {
+		t.Fatalf("required = %v, want [code]", AutoImportTool{}.Parameters()["required"])
+	}
+}
+
+func TestConflictResolverSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ConflictResolverTool{}
+	props := schemaProps(t, ConflictResolverTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	enum, ok := props["strategy"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "smart" || enum[2] != "theirs" {
+		t.Fatalf("strategy enum = %v, want [smart ours theirs]", props["strategy"])
+	}
+	if props["dry_run"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("dry_run type wrong")
+	}
+	req, _ := ConflictResolverTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "path" {
+		t.Fatalf("required = %v, want [path]", ConflictResolverTool{}.Parameters()["required"])
+	}
+}
+
+func TestAppVerifySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = AppVerifyTool{}
+	props := schemaProps(t, AppVerifyTool{}.Parameters())
+	action, ok := props["action"].(map[string]interface{})
+	if !ok || action["type"] != "string" {
+		t.Fatalf("action prop = %v, want string", props["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "detect" || enum[2] != "smoke" {
+		t.Fatalf("action enum = %v, want [detect manifest smoke]", action["enum"])
+	}
+	rs := props["readiness_seconds"].(map[string]interface{})
+	if rs["minimum"] != 1 || rs["maximum"] != 300 {
+		t.Fatalf("readiness_seconds bounds = %v/%v, want 1/300", rs["minimum"], rs["maximum"])
+	}
+	req, _ := AppVerifyTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", AppVerifyTool{}.Parameters()["required"])
+	}
+}
