@@ -15,8 +15,6 @@ import (
 )
 
 type LSPTool struct {
-
-	// placeholder not used
 	Manager *lsp.LSPManager
 }
 
