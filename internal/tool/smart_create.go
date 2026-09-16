@@ -646,7 +646,8 @@ type SmartCreateTool struct {
 }
 
 // smartCreateInput is the JSON input for the SmartCreate tool.
-type smartCreateInput struct {
+// SmartCreateInput is the typed input for SmartCreateTool.
+type SmartCreateInput struct {
 	Path string `json:"path"`
 }
 
@@ -658,23 +659,29 @@ func (t *SmartCreateTool) Description() string {
 	return "Creates a new file with appropriate boilerplate based on project conventions and file type."
 }
 
-func (t *SmartCreateTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path of the file to create",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (t *SmartCreateTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path": {Type: "string", Description: "Path of the file to create"},
 		},
-		"required": []string{"path"},
+		Required: []string{"path"},
 	}
 }
 
+func (t *SmartCreateTool) Parameters() map[string]interface{} {
+	return smartCreateSchema.ToJSONSchema()
+}
+
+// smartCreateSchema is the single source of truth for SmartCreate's input schema.
+var smartCreateSchema = (&SmartCreateTool{}).Schema()
+
 func (t *SmartCreateTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params smartCreateInput
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[SmartCreateInput]("SmartCreate", input)
+	if err != nil {
+		return "", err
 	}
 
 	if params.Path == "" {

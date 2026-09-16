@@ -15,6 +15,20 @@ import (
 // CodeGraphTool provides tree-sitter based code intelligence.
 type CodeGraphTool struct{}
 
+// CodeGraphInput is the typed input for CodeGraphTool.
+type CodeGraphInput struct {
+	Action   string `json:"action"`
+	Query    string `json:"query"`
+	NodeID   string `json:"node_id"`
+	MaxDepth int    `json:"max_depth"`
+	MaxNodes int    `json:"max_nodes"`
+	Root     string `json:"root"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	MaxFiles int    `json:"max_files"`
+	Dir      string `json:"dir"`
+}
+
 func (CodeGraphTool) Name() string      { return "CodeGraph" }
 func (CodeGraphTool) RiskLevel() string { return "low" }
 func (CodeGraphTool) Aliases() []string { return []string{"cg", "graph"} }
@@ -22,70 +36,37 @@ func (CodeGraphTool) Description() string {
 	return "Query the code knowledge graph: search symbols, trace callers/callees, compute impact radius, build context."
 }
 
-func (CodeGraphTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"search", "callers", "callees", "impact", "context", "index", "sync", "trace", "explore", "files", "status", "stats", "pagerank", "centrality", "communities", "components", "deadcode", "coupling", "cross_repo", "semantic_search", "hybrid_search"},
-				"description": "Action: search/find symbols, callers/who calls, callees/what it calls, impact/breakage radius, context/build task context, index/full re-index, sync/incremental update, trace/call path A→B, explore/multi-symbol source, files/list indexed, status/health check, stats/counts, pagerank/file importance, centrality/bridge files, communities/module clusters, components/isolated subsystems, deadcode/unused code, coupling/tightly coupled files, cross_repo/cross-repo dependencies, semantic_search/embedding-based search, hybrid_search/combined FTS5+semantic",
-			},
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Search query, symbol name, or task description (for context/trace use 'from -> to')",
-			},
-			"node_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Node ID for callers/callees/impact",
-			},
-			"max_depth": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max traversal depth (default: 3)",
-			},
-			"max_nodes": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max nodes to return (default: 30)",
-			},
-			"root": map[string]interface{}{
-				"type":        "string",
-				"description": "Project root directory (default: current dir)",
-			},
-			"from": map[string]interface{}{
-				"type":        "string",
-				"description": "Source symbol for trace action",
-			},
-			"to": map[string]interface{}{
-				"type":        "string",
-				"description": "Target symbol for trace action",
-			},
-			"max_files": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max files for explore action (default: 10)",
-			},
-			"dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory filter for files action",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (CodeGraphTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":    {Type: "string", Enum: []interface{}{"search", "callers", "callees", "impact", "context", "index", "sync", "trace", "explore", "files", "status", "stats", "pagerank", "centrality", "communities", "components", "deadcode", "coupling", "cross_repo", "semantic_search", "hybrid_search"}, Description: "Action: search/find symbols, callers/who calls, callees/what it calls, impact/breakage radius, context/build task context, index/full re-index, sync/incremental update, trace/call path A→B, explore/multi-symbol source, files/list indexed, status/health check, stats/counts, pagerank/file importance, centrality/bridge files, communities/module clusters, components/isolated subsystems, deadcode/unused code, coupling/tightly coupled files, cross_repo/cross-repo dependencies, semantic_search/embedding-based search, hybrid_search/combined FTS5+semantic"},
+			"query":     {Type: "string", Description: "Search query, symbol name, or task description (for context/trace use 'from -> to')"},
+			"node_id":   {Type: "string", Description: "Node ID for callers/callees/impact"},
+			"max_depth": {Type: "integer", Description: "Max traversal depth (default: 3)"},
+			"max_nodes": {Type: "integer", Description: "Max nodes to return (default: 30)"},
+			"root":      {Type: "string", Description: "Project root directory (default: current dir)"},
+			"from":      {Type: "string", Description: "Source symbol for trace action"},
+			"to":        {Type: "string", Description: "Target symbol for trace action"},
+			"max_files": {Type: "integer", Description: "Max files for explore action (default: 10)"},
+			"dir":       {Type: "string", Description: "Directory filter for files action"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (CodeGraphTool) Parameters() map[string]interface{} {
+	return codeGraphSchema.ToJSONSchema()
+}
+
+// codeGraphSchema is the single source of truth for CodeGraph's input schema.
+var codeGraphSchema = CodeGraphTool{}.Schema()
+
 func (CodeGraphTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action   string `json:"action"`
-		Query    string `json:"query"`
-		NodeID   string `json:"node_id"`
-		MaxDepth int    `json:"max_depth"`
-		MaxNodes int    `json:"max_nodes"`
-		Root     string `json:"root"`
-		From     string `json:"from"`
-		To       string `json:"to"`
-		MaxFiles int    `json:"max_files"`
-		Dir      string `json:"dir"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[CodeGraphInput]("CodeGraph", input)
+	if err != nil {
 		return "", err
 	}
 

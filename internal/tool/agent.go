@@ -26,6 +26,22 @@ const (
 
 type AgentTool struct{}
 
+// AgentInput is the typed input for AgentTool.
+type AgentInput struct {
+	Prompt          string `json:"prompt"`
+	Description     string `json:"description"`
+	SubagentType    string `json:"subagent_type"`
+	CapabilityMode  string `json:"capability_mode"`
+	Isolation       string `json:"isolation"`
+	Thoroughness    string `json:"thoroughness"`
+	CWD             string `json:"cwd"`
+	Model           string `json:"model"`
+	RunInBackground bool   `json:"run_in_background"`
+	AgentID         string `json:"agent_id"`
+	ResumeFrom      string `json:"resume_from"`
+	RetryOf         string `json:"retry_of"`
+}
+
 func (AgentTool) Name() string      { return "Agent" }
 func (AgentTool) RiskLevel() string { return "medium" }
 func (AgentTool) Aliases() []string { return []string{"agent", "Task"} }
@@ -36,83 +52,39 @@ func (AgentTool) Description() string {
 		"cwd, model, description, and run_in_background control spawn behavior."
 }
 
-func (AgentTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"prompt": map[string]interface{}{
-				"type":        "string",
-				"description": "Task description for the sub-agent",
-			},
-			"description": map[string]interface{}{
-				"type":        "string",
-				"description": "Short human-readable label for the spawn (3–5 words).",
-			},
-			"subagent_type": map[string]interface{}{
-				"type":        "string",
-				"description": "explore | plan | general-purpose (alias: general). Default: explore.",
-				"enum":        []string{"explore", "plan", "general-purpose", "general"},
-			},
-			"capability_mode": map[string]interface{}{
-				"type":        "string",
-				"description": "read-only | read-write | execute | all. Defaults from subagent_type when omitted.",
-				"enum":        []string{"read-only", "read-write", "execute", "all"},
-			},
-			"isolation": map[string]interface{}{
-				"type":        "string",
-				"description": "none | worktree. Mutually exclusive with cwd when worktree.",
-				"enum":        []string{"none", "worktree"},
-			},
-			"thoroughness": map[string]interface{}{
-				"type":        "string",
-				"description": "Explore only: quick | medium | very-thorough.",
-				"enum":        []string{"quick", "medium", "very-thorough"},
-			},
-			"cwd": map[string]interface{}{
-				"type":        "string",
-				"description": "Working directory for the sub-agent. Mutually exclusive with isolation=worktree.",
-			},
-			"model": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional model override for the sub-agent.",
-			},
-			"run_in_background": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, spawn asynchronously — results are collected when the main turn ends.",
-			},
-			"agent_id": map[string]interface{}{
-				"type":        "string",
-				"description": "ID of a previous sub-agent to query status/result (legacy resume lookup).",
-			},
-			"resume_from": map[string]interface{}{
-				"type":        "string",
-				"description": "Subagent ID to resume with full transcript (typed spawn).",
-			},
-			"retry_of": map[string]interface{}{
-				"type":        "string",
-				"description": "ID of a failed sub-agent to retry. Spawns a new agent with the same request.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (AgentTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"prompt":            {Type: "string", Description: "Task description for the sub-agent"},
+			"description":       {Type: "string", Description: "Short human-readable label for the spawn (3–5 words)."},
+			"subagent_type":     {Type: "string", Enum: []interface{}{"explore", "plan", "general-purpose", "general"}, Description: "explore | plan | general-purpose (alias: general). Default: explore."},
+			"capability_mode":   {Type: "string", Enum: []interface{}{"read-only", "read-write", "execute", "all"}, Description: "read-only | read-write | execute | all. Defaults from subagent_type when omitted."},
+			"isolation":         {Type: "string", Enum: []interface{}{"none", "worktree"}, Description: "none | worktree. Mutually exclusive with cwd when worktree."},
+			"thoroughness":      {Type: "string", Enum: []interface{}{"quick", "medium", "very-thorough"}, Description: "Explore only: quick | medium | very-thorough."},
+			"cwd":               {Type: "string", Description: "Working directory for the sub-agent. Mutually exclusive with isolation=worktree."},
+			"model":             {Type: "string", Description: "Optional model override for the sub-agent."},
+			"run_in_background": {Type: "boolean", Description: "If true, spawn asynchronously — results are collected when the main turn ends."},
+			"agent_id":          {Type: "string", Description: "ID of a previous sub-agent to query status/result (legacy resume lookup)."},
+			"resume_from":       {Type: "string", Description: "Subagent ID to resume with full transcript (typed spawn)."},
+			"retry_of":          {Type: "string", Description: "ID of a failed sub-agent to retry. Spawns a new agent with the same request."},
 		},
-		"required": []string{"prompt"},
+		Required: []string{"prompt"},
 	}
 }
 
+func (AgentTool) Parameters() map[string]interface{} {
+	return agentSchema.ToJSONSchema()
+}
+
+// agentSchema is the single source of truth for Agent's input schema.
+var agentSchema = AgentTool{}.Schema()
+
 func (AgentTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Prompt          string `json:"prompt"`
-		Description     string `json:"description"`
-		SubagentType    string `json:"subagent_type"`
-		CapabilityMode  string `json:"capability_mode"`
-		Isolation       string `json:"isolation"`
-		Thoroughness    string `json:"thoroughness"`
-		CWD             string `json:"cwd"`
-		Model           string `json:"model"`
-		RunInBackground bool   `json:"run_in_background"`
-		AgentID         string `json:"agent_id"`
-		ResumeFrom      string `json:"resume_from"`
-		RetryOf         string `json:"retry_of"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[AgentInput]("Agent", input)
+	if err != nil {
 		return "", err
 	}
 	if len(p.Prompt) > maxAgentPromptBytes {

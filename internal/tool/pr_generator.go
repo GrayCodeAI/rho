@@ -504,33 +504,37 @@ func (t *PRGeneratorTool) Description() string {
 }
 
 // Parameters returns the JSON schema for the tool's input.
-func (t *PRGeneratorTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"base_branch": map[string]interface{}{
-				"type":        "string",
-				"description": "The base branch to compare against (e.g., 'main', 'develop')",
-				"default":     "main",
-			},
-			"project_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "The project directory (defaults to current directory)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (t *PRGeneratorTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"base_branch": {Type: "string", Default: "main", Description: "The base branch to compare against (e.g., 'main', 'develop')"},
+			"project_dir": {Type: "string", Description: "The project directory (defaults to current directory)"},
 		},
-		"required": []string{},
+		Required: []string{},
 	}
+}
+
+func (t *PRGeneratorTool) Parameters() map[string]interface{} {
+	return prGeneratorSchema.ToJSONSchema()
+}
+
+// prGeneratorSchema is the single source of truth for PRGenerator's input schema.
+var prGeneratorSchema = (&PRGeneratorTool{}).Schema()
+
+// PRGeneratorInput is the typed input for PRGeneratorTool.
+type PRGeneratorInput struct {
+	BaseBranch string `json:"base_branch"`
+	ProjectDir string `json:"project_dir"`
 }
 
 // Execute runs the PR generator tool.
 func (t *PRGeneratorTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		BaseBranch string `json:"base_branch"`
-		ProjectDir string `json:"project_dir"`
-	}
-
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[PRGeneratorInput]("PRGenerator", input)
+	if err != nil {
+		return "", err
 	}
 
 	if params.BaseBranch == "" {
