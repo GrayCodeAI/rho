@@ -19,6 +19,13 @@ import (
 // to guess a build or test command.
 type ProjectVerifyTool struct{}
 
+// ProjectVerifyInput is the typed input for ProjectVerifyTool.
+type ProjectVerifyInput struct {
+	Action         string `json:"action"`
+	Path           string `json:"path"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
 func (ProjectVerifyTool) Name() string      { return "ProjectVerify" }
 func (ProjectVerifyTool) RiskLevel() string { return "medium" }
 func (ProjectVerifyTool) Aliases() []string { return []string{"project-verify", "verify_project"} }
@@ -26,29 +33,26 @@ func (ProjectVerifyTool) Description() string {
 	return "Detect the project stack and run bounded build, test, lint, or format checks using fixed argument lists (no shell interpolation). Returns structured results with exit codes and durations."
 }
 
-func (ProjectVerifyTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"detect", "build", "test", "lint", "format", "all"},
-				"description": "Verification action. detect only inspects files; all runs build, test, lint, and format checks that are available.",
-			},
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Project directory (default: session working directory).",
-			},
-			"timeout_seconds": map[string]interface{}{
-				"type":        "integer",
-				"minimum":     1,
-				"maximum":     600,
-				"description": "Per-command timeout (default 120 seconds, max 600).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ProjectVerifyTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":          {Type: "string", Enum: []interface{}{"detect", "build", "test", "lint", "format", "all"}, Description: "Verification action. detect only inspects files; all runs build, test, lint, and format checks that are available."},
+			"path":            {Type: "string", Description: "Project directory (default: session working directory)."},
+			"timeout_seconds": {Type: "integer", Minimum: 1, Maximum: 600, Description: "Per-command timeout (default 120 seconds, max 600)."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
+
+func (ProjectVerifyTool) Parameters() map[string]interface{} {
+	return projectVerifySchema.ToJSONSchema()
+}
+
+// projectVerifySchema is the single source of truth for ProjectVerify's input schema.
+var projectVerifySchema = ProjectVerifyTool{}.Schema()
 
 type projectStack struct {
 	Root    string   `json:"root"`
@@ -67,13 +71,9 @@ type verificationResult struct {
 }
 
 func (ProjectVerifyTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Action         string `json:"action"`
-		Path           string `json:"path"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[ProjectVerifyInput]("ProjectVerify", input)
+	if err != nil {
+		return "", err
 	}
 	params.Action = strings.ToLower(strings.TrimSpace(params.Action))
 	if params.Action == "" {

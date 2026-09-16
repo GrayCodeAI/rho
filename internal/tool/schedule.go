@@ -24,47 +24,46 @@ func (ScheduleCreateTool) Description() string {
 	return "Create an in-conversation scheduled reminder or recurring task whose state lives in the session log."
 }
 
-func (ScheduleCreateTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"prompt": map[string]interface{}{
-				"type":        "string",
-				"description": "Reminder or instruction prompt to deliver into the conversation when due",
-			},
-			"duration": map[string]interface{}{
-				"type":        "string",
-				"description": "Relative duration from now until due (e.g. '10m', '1h', '30s')",
-			},
-			"at": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional absolute due time in RFC3339 format (e.g. '2026-08-20T10:00:00Z')",
-			},
-			"recurring": map[string]interface{}{
-				"type":        "boolean",
-				"description": "Whether the reminder should repeat periodically",
-			},
-			"interval": map[string]interface{}{
-				"type":        "string",
-				"description": "Repeat interval if recurring (e.g. '15m', '1h', '24h')",
-			},
+// ScheduleCreateInput is the typed input for ScheduleCreateTool.
+type ScheduleCreateInput struct {
+	Prompt    string `json:"prompt"`
+	Duration  string `json:"duration"`
+	At        string `json:"at"`
+	Recurring bool   `json:"recurring"`
+	Interval  string `json:"interval"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ScheduleCreateTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"prompt":    {Type: "string", Description: "Reminder or instruction prompt to deliver into the conversation when due"},
+			"duration":  {Type: "string", Description: "Relative duration from now until due (e.g. '10m', '1h', '30s')"},
+			"at":        {Type: "string", Description: "Optional absolute due time in RFC3339 format (e.g. '2026-08-20T10:00:00Z')"},
+			"recurring": {Type: "boolean", Description: "Whether the reminder should repeat periodically"},
+			"interval":  {Type: "string", Description: "Repeat interval if recurring (e.g. '15m', '1h', '24h')"},
 		},
-		"required": []string{"prompt"},
+		Required: []string{"prompt"},
 	}
 }
 
+func (ScheduleCreateTool) Parameters() map[string]interface{} {
+	return scheduleCreateSchema.ToJSONSchema()
+}
+
+// scheduleCreateSchema is the single source of truth for ScheduleCreate's input schema.
+var scheduleCreateSchema = ScheduleCreateTool{}.Schema()
+
 func (t ScheduleCreateTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Prompt    string `json:"prompt"`
-		Duration  string `json:"duration"`
-		At        string `json:"at"`
-		Recurring bool   `json:"recurring"`
-		Interval  string `json:"interval"`
-	}
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &p); err != nil {
-			return "", fmt.Errorf("invalid parameters: %w", err)
+	var p ScheduleCreateInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[ScheduleCreateInput]("ScheduleCreate", input)
+		if err != nil {
+			return "", err
 		}
+		p = decoded
 	}
 
 	if strings.TrimSpace(p.Prompt) == "" {
@@ -115,18 +114,29 @@ type ScheduleListTool struct {
 	Manager *schedule.Manager
 }
 
-func (ScheduleListTool) Name() string      { return "ScheduleList" }
+func (ScheduleListTool) Name() string { return "ScheduleList" }
+
+// ScheduleListInput is the typed input for ScheduleListTool. It declares an
+// empty schema: the tool takes no arguments.
+type ScheduleListInput struct{}
+
 func (ScheduleListTool) Aliases() []string { return []string{"schedule_list", "schedule-list"} }
 func (ScheduleListTool) Description() string {
 	return "List all active in-conversation scheduled reminders and tasks for this session."
 }
 
-func (ScheduleListTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ScheduleListTool) Schema() ToolSchema {
+	return ToolSchema{Type: "object"}
 }
+
+func (ScheduleListTool) Parameters() map[string]interface{} {
+	return scheduleListSchema.ToJSONSchema()
+}
+
+// scheduleListSchema is the single source of truth for ScheduleList's input schema.
+var scheduleListSchema = ScheduleListTool{}.Schema()
 
 func (t ScheduleListTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
 	mgr := t.Manager
@@ -158,39 +168,48 @@ type ScheduleDeleteTool struct {
 	Manager *schedule.Manager
 }
 
-func (ScheduleDeleteTool) Name() string      { return "ScheduleDelete" }
+func (ScheduleDeleteTool) Name() string { return "ScheduleDelete" }
+
+// ScheduleDeleteInput is the typed input for ScheduleDeleteTool.
+type ScheduleDeleteInput struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
 func (ScheduleDeleteTool) Aliases() []string { return []string{"schedule_delete", "schedule-delete"} }
 
 func (ScheduleDeleteTool) Description() string {
 	return "Cancel/delete an in-conversation scheduled reminder by ID."
 }
 
-func (ScheduleDeleteTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"id": map[string]interface{}{
-				"type":        "string",
-				"description": "Schedule ID to cancel (e.g. 'sched-1234abcd')",
-			},
-			"reason": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional cancellation reason",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ScheduleDeleteTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"id":     {Type: "string", Description: "Schedule ID to cancel (e.g. 'sched-1234abcd')"},
+			"reason": {Type: "string", Description: "Optional cancellation reason"},
 		},
-		"required": []string{"id"},
+		Required: []string{"id"},
 	}
 }
 
+func (ScheduleDeleteTool) Parameters() map[string]interface{} {
+	return scheduleDeleteSchema.ToJSONSchema()
+}
+
+// scheduleDeleteSchema is the single source of truth for ScheduleDelete's input schema.
+var scheduleDeleteSchema = ScheduleDeleteTool{}.Schema()
+
 func (t ScheduleDeleteTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ID     string `json:"id"`
-		Reason string `json:"reason"`
-	}
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &p); err != nil {
-			return "", fmt.Errorf("invalid parameters: %w", err)
+	var p ScheduleDeleteInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[ScheduleDeleteInput]("ScheduleDelete", input)
+		if err != nil {
+			return "", err
 		}
+		p = decoded
 	}
 
 	if strings.TrimSpace(p.ID) == "" {

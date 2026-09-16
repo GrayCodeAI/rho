@@ -15,53 +15,53 @@ type SessionQueryTool struct {
 	Service *sessionquery.Service
 }
 
-func (SessionQueryTool) Name() string      { return "SessionQuery" }
+func (SessionQueryTool) Name() string { return "SessionQuery" }
+
+// SessionQueryInput is the typed input for SessionQueryTool.
+type SessionQueryInput struct {
+	Query     string `json:"query"`
+	SessionID string `json:"session_id"`
+	Workspace string `json:"workspace"`
+	Limit     int    `json:"limit"`
+	Offset    int    `json:"offset"`
+}
+
 func (SessionQueryTool) Aliases() []string { return []string{"session_query", "session-query"} }
 func (SessionQueryTool) Description() string {
 	return "Search conversation history across past and current sessions using SQLite full-text search."
 }
 
-func (SessionQueryTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Full-text search query to find relevant past conversations",
-			},
-			"session_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional specific session ID to filter search within",
-			},
-			"workspace": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional workspace directory path to filter sessions within",
-			},
-			"limit": map[string]interface{}{
-				"type":        "integer",
-				"description": "Maximum number of search results to return (default 10, max 50)",
-			},
-			"offset": map[string]interface{}{
-				"type":        "integer",
-				"description": "Pagination offset for scrolling through results (default 0)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SessionQueryTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"query":      {Type: "string", Description: "Full-text search query to find relevant past conversations"},
+			"session_id": {Type: "string", Description: "Optional specific session ID to filter search within"},
+			"workspace":  {Type: "string", Description: "Optional workspace directory path to filter sessions within"},
+			"limit":      {Type: "integer", Description: "Maximum number of search results to return (default 10, max 50)"},
+			"offset":     {Type: "integer", Description: "Pagination offset for scrolling through results (default 0)"},
 		},
-		"required": []string{"query"},
+		Required: []string{"query"},
 	}
 }
 
+func (SessionQueryTool) Parameters() map[string]interface{} {
+	return sessionQuerySchema.ToJSONSchema()
+}
+
+// sessionQuerySchema is the single source of truth for SessionQuery's input schema.
+var sessionQuerySchema = SessionQueryTool{}.Schema()
+
 func (t SessionQueryTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Query     string `json:"query"`
-		SessionID string `json:"session_id"`
-		Workspace string `json:"workspace"`
-		Limit     int    `json:"limit"`
-		Offset    int    `json:"offset"`
-	}
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &p); err != nil {
-			return "", fmt.Errorf("invalid parameters: %w", err)
+	var p SessionQueryInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SessionQueryInput]("SessionQuery", input)
+		if err != nil {
+			return "", err
 		}
+		p = decoded
 	}
 
 	if strings.TrimSpace(p.Query) == "" {

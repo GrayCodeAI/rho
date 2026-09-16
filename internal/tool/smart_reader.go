@@ -753,7 +753,18 @@ func NewSmartReaderTool() *SmartReaderTool {
 	return &SmartReaderTool{reader: NewSmartReader(defaultMaxTokens)}
 }
 
-func (SmartReaderTool) Name() string      { return "SmartRead" }
+func (SmartReaderTool) Name() string { return "SmartRead" }
+
+// SmartReaderInput is the typed input for SmartReaderTool.
+type SmartReaderInput struct {
+	Path      string `json:"path"`
+	Query     string `json:"query"`
+	Strategy  string `json:"strategy"`
+	Budget    int    `json:"budget"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+}
+
 func (SmartReaderTool) RiskLevel() string { return "low" }
 func (SmartReaderTool) Aliases() []string { return []string{"smart_read"} }
 
@@ -761,50 +772,33 @@ func (SmartReaderTool) Description() string {
 	return `Token-aware file reader that intelligently reads files within a token budget. Shows full content for small files, or the most relevant parts (function signatures, keyword matches with context, head/tail) for large files. Use when you need to understand a large file without reading all of it.`
 }
 
-func (SmartReaderTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "File path to read.",
-			},
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional query to prioritize relevant sections (keywords that appear in the file).",
-			},
-			"strategy": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"full", "head_tail", "symbols", "relevant"},
-				"description": "Reading strategy. Default: relevant (auto-selects head_tail if no query).",
-			},
-			"budget": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max token budget for reading (default 8000).",
-			},
-			"start_line": map[string]interface{}{
-				"type":        "integer",
-				"description": "Read from this line (1-based). If set, reads a specific range.",
-			},
-			"end_line": map[string]interface{}{
-				"type":        "integer",
-				"description": "Read to this line (1-based, inclusive). Used with start_line.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SmartReaderTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":       {Type: "string", Description: "File path to read."},
+			"query":      {Type: "string", Description: "Optional query to prioritize relevant sections (keywords that appear in the file)."},
+			"strategy":   {Type: "string", Enum: []interface{}{"full", "head_tail", "symbols", "relevant"}, Description: "Reading strategy. Default: relevant (auto-selects head_tail if no query)."},
+			"budget":     {Type: "integer", Description: "Max token budget for reading (default 8000)."},
+			"start_line": {Type: "integer", Description: "Read from this line (1-based). If set, reads a specific range."},
+			"end_line":   {Type: "integer", Description: "Read to this line (1-based, inclusive). Used with start_line."},
 		},
-		"required": []string{"path"},
+		Required: []string{"path"},
 	}
 }
 
+func (SmartReaderTool) Parameters() map[string]interface{} {
+	return smartReaderSchema.ToJSONSchema()
+}
+
+// smartReaderSchema is the single source of truth for SmartReader's input schema.
+var smartReaderSchema = SmartReaderTool{}.Schema()
+
 func (t *SmartReaderTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path      string `json:"path"`
-		Query     string `json:"query"`
-		Strategy  string `json:"strategy"`
-		Budget    int    `json:"budget"`
-		StartLine int    `json:"start_line"`
-		EndLine   int    `json:"end_line"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SmartReaderInput]("SmartReader", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Path == "" {
