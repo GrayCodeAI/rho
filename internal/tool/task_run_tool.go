@@ -15,6 +15,12 @@ import (
 // for TaskRunner.
 type TaskRunTool struct{}
 
+// TaskRunInput is the typed input for TaskRunTool.
+type TaskRunInput struct {
+	TimeoutSec    int `json:"timeout_sec"`
+	MaxTotalTasks int `json:"max_total_tasks"`
+}
+
 func (TaskRunTool) Name() string      { return "TaskRun" }
 func (TaskRunTool) Aliases() []string { return []string{"task_run"} }
 func (TaskRunTool) Description() string {
@@ -23,21 +29,24 @@ func (TaskRunTool) Description() string {
 		"when the budget is exhausted. Returns a run summary."
 }
 
-func (TaskRunTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"timeout_sec": map[string]interface{}{
-				"type":        "integer",
-				"description": "Per-task execution timeout in seconds (default 300)",
-			},
-			"max_total_tasks": map[string]interface{}{
-				"type":        "integer",
-				"description": "Watchdog cap on distinct tasks that may reach a terminal state (default 50)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskRunTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"timeout_sec":     {Type: "integer", Description: "Per-task execution timeout in seconds (default 300)"},
+			"max_total_tasks": {Type: "integer", Description: "Watchdog cap on distinct tasks that may reach a terminal state (default 50)"},
 		},
 	}
 }
+
+func (TaskRunTool) Parameters() map[string]interface{} {
+	return taskRunSchema.ToJSONSchema()
+}
+
+// taskRunSchema is the single source of truth for TaskRun's input schema.
+var taskRunSchema = TaskRunTool{}.Schema()
 
 func (TaskRunTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	tc := GetToolContext(ctx)
@@ -45,12 +54,13 @@ func (TaskRunTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 		return "", fmt.Errorf("TaskRun requires a task executor; none is configured for this session")
 	}
 
-	var p struct {
-		TimeoutSec    int `json:"timeout_sec"`
-		MaxTotalTasks int `json:"max_total_tasks"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p TaskRunInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[TaskRunInput]("TaskRun", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	timeout := time.Duration(p.TimeoutSec) * time.Second
 	if timeout <= 0 {

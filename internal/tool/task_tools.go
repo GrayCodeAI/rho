@@ -231,27 +231,39 @@ func (t *backgroundTask) stop() error {
 
 type TaskOutputTool struct{}
 
+// TaskOutputInput is the typed input for TaskOutputTool.
+type TaskOutputInput struct {
+	TaskID string `json:"task_id"`
+}
+
 func (TaskOutputTool) Name() string      { return "TaskOutput" }
 func (TaskOutputTool) Aliases() []string { return []string{"task_output"} }
 func (TaskOutputTool) Description() string {
 	return "Read output from a background task (shell, agent, or monitor) by task_id."
 }
 
-func (TaskOutputTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"task_id": map[string]interface{}{"type": "string", "description": "Background task ID"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskOutputTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"task_id": {Type: "string", Description: "Background task ID"},
 		},
-		"required": []string{"task_id"},
+		Required: []string{"task_id"},
 	}
 }
 
+func (TaskOutputTool) Parameters() map[string]interface{} {
+	return taskOutputSchema.ToJSONSchema()
+}
+
+// taskOutputSchema is the single source of truth for TaskOutput's input schema.
+var taskOutputSchema = TaskOutputTool{}.Schema()
+
 func (TaskOutputTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TaskOutputInput]("TaskOutput", input)
+	if err != nil {
 		return "", err
 	}
 	// Accept legacy taskId field
@@ -271,27 +283,39 @@ func (TaskOutputTool) Execute(ctx context.Context, input json.RawMessage) (strin
 
 type TaskStopTool struct{}
 
+// TaskStopInput is the typed input for TaskStopTool.
+type TaskStopInput struct {
+	TaskID string `json:"task_id"`
+}
+
 func (TaskStopTool) Name() string      { return "TaskStop" }
 func (TaskStopTool) Aliases() []string { return []string{"task_stop"} }
 func (TaskStopTool) Description() string {
 	return "Stop a background shell, agent, or monitor task."
 }
 
-func (TaskStopTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"task_id": map[string]interface{}{"type": "string", "description": "Background task ID"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskStopTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"task_id": {Type: "string", Description: "Background task ID"},
 		},
-		"required": []string{"task_id"},
+		Required: []string{"task_id"},
 	}
 }
 
+func (TaskStopTool) Parameters() map[string]interface{} {
+	return taskStopSchema.ToJSONSchema()
+}
+
+// taskStopSchema is the single source of truth for TaskStop's input schema.
+var taskStopSchema = TaskStopTool{}.Schema()
+
 func (TaskStopTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TaskStopInput]("TaskStop", input)
+	if err != nil {
 		return "", err
 	}
 	if p.TaskID == "" {
