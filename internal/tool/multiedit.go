@@ -17,20 +17,22 @@ func (MultiEditTool) Description() string {
 	return "Apply multiple edits to a single file in one call. Each edit replaces an exact string match. Edits are applied sequentially."
 }
 
-func (MultiEditTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"file_path": map[string]interface{}{"type": "string", "description": "File path to edit"},
-			"edits": map[string]interface{}{
-				"type":        "array",
-				"description": "Array of edit operations",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"old_string":  map[string]interface{}{"type": "string", "description": "Exact string to find"},
-						"new_string":  map[string]interface{}{"type": "string", "description": "Replacement string"},
-						"replace_all": map[string]interface{}{"type": "boolean", "description": "Replace all occurrences (default: first only)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (MultiEditTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"file_path": {Type: "string", Description: "File path to edit"},
+			"edits": {
+				Type:        "array",
+				Description: "Array of edit operations",
+				Items: &SchemaProperty{
+					Type: "object",
+					Properties: map[string]SchemaProperty{
+						"old_string":  {Type: "string", Description: "Exact string to find"},
+						"new_string":  {Type: "string", Description: "Replacement string"},
+						"replace_all": {Type: "boolean", Description: "Replace all occurrences (default: first only)"},
 					},
 				},
 			},
@@ -38,7 +40,15 @@ func (MultiEditTool) Parameters() map[string]interface{} {
 	}
 }
 
-type multiEditParams struct {
+func (MultiEditTool) Parameters() map[string]interface{} {
+	return multiEditSchema.ToJSONSchema()
+}
+
+// multiEditSchema is the single source of truth for MultiEdit's input schema.
+var multiEditSchema = MultiEditTool{}.Schema()
+
+// MultiEditInput is the typed input for MultiEditTool.
+type MultiEditInput struct {
 	FilePath string `json:"file_path"`
 	Edits    []struct {
 		OldString  string `json:"old_string"`
@@ -48,8 +58,8 @@ type multiEditParams struct {
 }
 
 func (MultiEditTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p multiEditParams
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[MultiEditInput]("MultiEdit", input)
+	if err != nil {
 		return "", err
 	}
 	if p.FilePath == "" {

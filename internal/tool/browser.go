@@ -117,33 +117,36 @@ func (BrowserTool) Description() string {
 	return "Control a headless Chrome browser: navigate to URLs, click and type into elements, extract page text/HTML/title, and take screenshots."
 }
 
-func (BrowserTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"navigate", "content", "screenshot", "click", "type", "title", "location", "ax_snapshot", "close"},
-				"description": "Actions. navigate/content/screenshot/title/location as named. ax_snapshot: compressed accessibility tree with uid handles (query optional); click/type then accept uid from that snapshot instead of a CSS selector. close shuts the browser down.",
-			},
-			"url":      map[string]interface{}{"type": "string", "description": "Target URL (http/https) for navigate/screenshot"},
-			"selector": map[string]interface{}{"type": "string", "description": "CSS selector for content/click/type and optional navigate wait"},
-			"uid":      map[string]interface{}{"type": "string", "description": "Element uid from the last ax_snapshot; preferred over selector for click/type"},
-			"text":     map[string]interface{}{"type": "string", "description": "Text to type (type action)"},
-			"clear":    map[string]interface{}{"type": "boolean", "description": "Clear the field before typing"},
-			"path":     map[string]interface{}{"type": "string", "description": "File path to save a screenshot to"},
-			"wait_ms":  map[string]interface{}{"type": "number", "description": "Milliseconds to wait after navigation (default 800)"},
-			"html":     map[string]interface{}{"type": "boolean", "description": "Return outer HTML instead of inner text (content action)"},
-			"max_chars": map[string]interface{}{
-				"type": "number", "description": "Truncate extracted content to this many characters (default 20000)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (BrowserTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":    {Type: "string", Enum: []interface{}{"navigate", "content", "screenshot", "click", "type", "title", "location", "ax_snapshot", "close"}, Description: "Actions. navigate/content/screenshot/title/location as named. ax_snapshot: compressed accessibility tree with uid handles (query optional); click/type then accept uid from that snapshot instead of a CSS selector. close shuts the browser down."},
+			"url":       {Type: "string", Description: "Target URL (http/https) for navigate/screenshot"},
+			"selector":  {Type: "string", Description: "CSS selector for content/click/type and optional navigate wait"},
+			"uid":       {Type: "string", Description: "Element uid from the last ax_snapshot; preferred over selector for click/type"},
+			"text":      {Type: "string", Description: "Text to type (type action)"},
+			"clear":     {Type: "boolean", Description: "Clear the field before typing"},
+			"path":      {Type: "string", Description: "File path to save a screenshot to"},
+			"wait_ms":   {Type: "number", Description: "Milliseconds to wait after navigation (default 800)"},
+			"html":      {Type: "boolean", Description: "Return outer HTML instead of inner text (content action)"},
+			"max_chars": {Type: "number", Description: "Truncate extracted content to this many characters (default 20000)"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
-// browserParams mirrors the declared JSON schema.
-type browserParams struct {
+func (BrowserTool) Parameters() map[string]interface{} {
+	return browserSchema.ToJSONSchema()
+}
+
+// browserSchema is the single source of truth for Browser's input schema.
+var browserSchema = BrowserTool{}.Schema()
+
+// BrowserInput is the typed input for BrowserTool.
+type BrowserInput struct {
 	Action   string `json:"action"`
 	URL      string `json:"url"`
 	Selector string `json:"selector"`
@@ -157,8 +160,8 @@ type browserParams struct {
 }
 
 func (BrowserTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p browserParams
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[BrowserInput]("Browser", input)
+	if err != nil {
 		return "", err
 	}
 	p.Action = strings.ToLower(strings.TrimSpace(p.Action))
