@@ -12,6 +12,12 @@ import (
 // DiagnosticsTool runs lint/type/compile diagnostics for a file or project.
 type DiagnosticsTool struct{}
 
+// DiagnosticsInput is the typed input for DiagnosticsTool.
+type DiagnosticsInput struct {
+	Path  string `json:"path"`
+	Scope string `json:"scope"`
+}
+
 func (DiagnosticsTool) Name() string      { return "Diagnostics" }
 func (DiagnosticsTool) Aliases() []string { return []string{"diagnostics", "lint"} }
 func (DiagnosticsTool) Description() string {
@@ -23,31 +29,30 @@ func (DiagnosticsTool) Description() string {
 Run this after making code changes to catch errors before committing.`
 }
 
-func (DiagnosticsTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "File or directory path to diagnose",
-			},
-			"scope": map[string]interface{}{
-				"type":        "string",
-				"description": "Scope of diagnostics: 'file' or 'project' (default: file)",
-				"enum":        []string{"file", "project"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (DiagnosticsTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":  {Type: "string", Description: "File or directory path to diagnose"},
+			"scope": {Type: "string", Enum: []interface{}{"file", "project"}, Description: "Scope of diagnostics: 'file' or 'project' (default: file)"},
 		},
-		"required": []string{"path"},
+		Required: []string{"path"},
 	}
 }
 
+func (DiagnosticsTool) Parameters() map[string]interface{} {
+	return diagnosticsSchema.ToJSONSchema()
+}
+
+// diagnosticsSchema is the single source of truth for Diagnostics' input schema.
+var diagnosticsSchema = DiagnosticsTool{}.Schema()
+
 func (DiagnosticsTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var args struct {
-		Path  string `json:"path"`
-		Scope string `json:"scope"`
-	}
-	if err := json.Unmarshal(input, &args); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	args, err := DecodeInput[DiagnosticsInput]("Diagnostics", input)
+	if err != nil {
+		return "", err
 	}
 	if args.Path == "" {
 		return "", fmt.Errorf("path is required")

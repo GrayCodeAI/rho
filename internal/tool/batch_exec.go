@@ -26,49 +26,36 @@ func (BatchExecTool) Description() string {
 	return "Submit one or more prompts to the Anthropic Message Batches API for 50%-cost async execution. Returns a batch ID; poll with action=poll to check status."
 }
 
-func (BatchExecTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"submit", "poll", "wait"},
-				"description": "submit: send prompts; poll: single status check; wait: poll until the batch reaches a terminal state (with backoff + Retry-After honoring).",
-			},
-			"prompts": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Prompts to submit (action=submit).",
-			},
-			"model": map[string]interface{}{
-				"type":        "string",
-				"description": "Model ID (default claude-sonnet-4-20250514).",
-			},
-			"batch_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Batch ID to poll/wait on.",
-			},
-			"max_tokens": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max output tokens per request (default 4096).",
-			},
-			"timeout_seconds": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max seconds to wait (default 600).",
-			},
-			"poll_interval_seconds": map[string]interface{}{
-				"type":        "integer",
-				"description": "Initial poll interval in seconds (default 2).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (BatchExecTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":                {Type: "string", Description: "submit: send prompts; poll: single status check; wait: poll until the batch reaches a terminal state (with backoff + Retry-After honoring).", Enum: []interface{}{"submit", "poll", "wait"}},
+			"prompts":               {Type: "array", Description: "Prompts to submit (action=submit).", Items: &SchemaProperty{Type: "string"}},
+			"model":                 {Type: "string", Description: "Model ID (default claude-sonnet-4-20250514)."},
+			"batch_id":              {Type: "string", Description: "Batch ID to poll/wait on."},
+			"max_tokens":            {Type: "integer", Description: "Max output tokens per request (default 4096)."},
+			"timeout_seconds":       {Type: "integer", Description: "Max seconds to wait (default 600)."},
+			"poll_interval_seconds": {Type: "integer", Description: "Initial poll interval in seconds (default 2)."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (BatchExecTool) Parameters() map[string]interface{} {
+	return batchExecSchema.ToJSONSchema()
+}
+
+// batchExecSchema is the single source of truth for BatchExec's input schema.
+var batchExecSchema = BatchExecTool{}.Schema()
+
 var batchHTTP = &http.Client{Timeout: 5 * time.Minute}
 
-// batchExecParams are the parsed parameters for all BatchExec actions.
-type batchExecParams struct {
+// BatchExecInput are the parsed parameters for all BatchExec actions.
+// BatchExecInput is the typed input for BatchExecTool.
+type BatchExecInput struct {
 	Action          string   `json:"action"`
 	Prompts         []string `json:"prompts"`
 	Model           string   `json:"model"`
@@ -102,9 +89,9 @@ type batchPollResult struct {
 }
 
 func (BatchExecTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p batchExecParams
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[BatchExecInput]("BatchExec", input)
+	if err != nil {
+		return "", err
 	}
 
 	apiKey := batchAPIKey()
@@ -130,7 +117,7 @@ func (BatchExecTool) Execute(ctx context.Context, input json.RawMessage) (string
 	}
 }
 
-func batchSubmit(ctx context.Context, apiKey string, p batchExecParams) (string, error) {
+func batchSubmit(ctx context.Context, apiKey string, p BatchExecInput) (string, error) {
 	if len(p.Prompts) == 0 {
 		return "", fmt.Errorf("at least one prompt is required")
 	}
