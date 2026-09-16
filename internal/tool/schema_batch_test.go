@@ -1303,3 +1303,79 @@ func TestSmartCreateSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [path]", (&SmartCreateTool{}).Parameters()["required"])
 	}
 }
+
+func TestTerminalCreateSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TerminalCreateTool{}
+	props := schemaProps(t, TerminalCreateTool{}.Parameters())
+	if props["command"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("command type wrong")
+	}
+	if props["rows"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("rows type wrong")
+	}
+	if props["cols"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("cols type wrong")
+	}
+}
+
+func TestTerminalSendSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TerminalSendTool{}
+	props := schemaProps(t, TerminalSendTool{}.Parameters())
+	if props["terminal_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("terminal_id type wrong")
+	}
+	if props["send_enter"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("send_enter type wrong")
+	}
+	req, _ := TerminalSendTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "terminal_id" || req[1] != "input" {
+		t.Fatalf("required = %v, want [terminal_id input]", TerminalSendTool{}.Parameters()["required"])
+	}
+}
+
+func TestTerminalReadSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TerminalReadTool{}
+	props := schemaProps(t, TerminalReadTool{}.Parameters())
+	if props["max_bytes"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_bytes type wrong")
+	}
+	if props["timeout_ms"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("timeout_ms type wrong")
+	}
+	req, _ := TerminalReadTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "terminal_id" {
+		t.Fatalf("required = %v, want [terminal_id]", TerminalReadTool{}.Parameters()["required"])
+	}
+}
+
+func TestTerminalListSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TerminalListTool{}
+	props := schemaProps(t, TerminalListTool{}.Parameters())
+	if props["session_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("session_id type wrong")
+	}
+}
+
+func TestTerminalResizeSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TerminalResizeTool{}
+	props := schemaProps(t, TerminalResizeTool{}.Parameters())
+	if props["rows"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("rows type wrong")
+	}
+	req, _ := TerminalResizeTool{}.Parameters()["required"].([]string)
+	if len(req) != 3 || req[0] != "terminal_id" || req[1] != "rows" || req[2] != "cols" {
+		t.Fatalf("required = %v, want [terminal_id rows cols]", TerminalResizeTool{}.Parameters()["required"])
+	}
+}
+
+func TestTerminalKillSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TerminalKillTool{}
+	props := schemaProps(t, TerminalKillTool{}.Parameters())
+	if props["terminal_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("terminal_id type wrong")
+	}
+	req, _ := TerminalKillTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "terminal_id" {
+		t.Fatalf("required = %v, want [terminal_id]", TerminalKillTool{}.Parameters()["required"])
+	}
+}
