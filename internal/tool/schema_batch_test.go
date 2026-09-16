@@ -279,3 +279,96 @@ func TestGitHistorySchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [action]", GitHistoryTool{}.Parameters()["required"])
 	}
 }
+
+func TestBatchExecSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = BatchExecTool{}
+	props := schemaProps(t, BatchExecTool{}.Parameters())
+	action, ok := props["action"].(map[string]interface{})
+	if !ok || action["type"] != "string" {
+		t.Fatalf("action prop = %v, want string type", props["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "submit" || enum[2] != "wait" {
+		t.Fatalf("action enum = %v, want [submit poll wait]", action["enum"])
+	}
+	prompts, ok := props["prompts"].(map[string]interface{})
+	if !ok || prompts["type"] != "array" {
+		t.Fatalf("prompts prop = %v, want array type", props["prompts"])
+	}
+	if prompts["items"].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("prompts items = %v, want string", prompts["items"])
+	}
+	req, _ := BatchExecTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", BatchExecTool{}.Parameters()["required"])
+	}
+}
+
+func TestDiagnosticsSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = DiagnosticsTool{}
+	props := schemaProps(t, DiagnosticsTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	enum, ok := props["scope"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "file" || enum[1] != "project" {
+		t.Fatalf("scope enum = %v, want [file project]", props["scope"])
+	}
+	req, _ := DiagnosticsTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "path" {
+		t.Fatalf("required = %v, want [path]", DiagnosticsTool{}.Parameters()["required"])
+	}
+}
+
+func TestCodeSearchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = CodeSearchTool{}
+	props := schemaProps(t, CodeSearchTool{}.Parameters())
+	for field, want := range map[string]string{"query": "string", "limit": "integer", "language": "string", "refresh": "boolean"} {
+		if props[field].(map[string]interface{})["type"] != want {
+			t.Fatalf("%s type = %v, want %s", field, props[field], want)
+		}
+	}
+	req, _ := CodeSearchTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "query" {
+		t.Fatalf("required = %v, want [query]", CodeSearchTool{}.Parameters()["required"])
+	}
+}
+
+func TestCodeMatchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = CodeMatchTool{}
+	props := schemaProps(t, CodeMatchTool{}.Parameters())
+	if props["pattern"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("pattern type wrong")
+	}
+	enum, ok := props["language"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 {
+		t.Fatalf("language enum = %v, want 4 options", props["language"])
+	}
+	limit := props["limit"].(map[string]interface{})
+	if limit["minimum"] != 1 || limit["maximum"] != 200 {
+		t.Fatalf("limit bounds = %v/%v, want 1/200", limit["minimum"], limit["maximum"])
+	}
+	req, _ := CodeMatchTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "pattern" {
+		t.Fatalf("required = %v, want [pattern]", CodeMatchTool{}.Parameters()["required"])
+	}
+}
+
+func TestOutlineSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = OutlineTool{}
+	props := schemaProps(t, OutlineTool{}.Parameters())
+	if props["file_path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("file_path type wrong")
+	}
+	fp, ok := props["file_paths"].(map[string]interface{})
+	if !ok || fp["type"] != "array" {
+		t.Fatalf("file_paths prop = %v, want array", props["file_paths"])
+	}
+	if fp["items"].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("file_paths items = %v, want string", fp["items"])
+	}
+	_, hasRequired := OutlineTool{}.Parameters()["required"]
+	if hasRequired {
+		t.Fatalf("Outline has no required fields, got %v", OutlineTool{}.Parameters()["required"])
+	}
+}

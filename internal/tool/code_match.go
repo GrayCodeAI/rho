@@ -21,6 +21,14 @@ import (
 // and strings cannot produce false positives.
 type CodeMatchTool struct{}
 
+// CodeMatchInput is the typed input for CodeMatchTool.
+type CodeMatchInput struct {
+	Pattern  string `json:"pattern"`
+	Path     string `json:"path"`
+	Language string `json:"language"`
+	Limit    int    `json:"limit"`
+}
+
 func (CodeMatchTool) Name() string      { return "CodeMatch" }
 func (CodeMatchTool) RiskLevel() string { return "low" }
 func (CodeMatchTool) Aliases() []string { return []string{"code_match", "match_code"} }
@@ -29,33 +37,27 @@ func (CodeMatchTool) Description() string {
 	return `Structural code search with tree-sitter query patterns. Matches the AST, not text: comments/strings cannot false-positive. Pattern is a tree-sitter query S-expression; use @captures to extract parts. Examples - Go functions: "(function_declaration name: (identifier) @name) @fn" | Go calls of one function: "(call_expression function: (identifier) @callee) @call" | Python defs: "(function_definition name: (identifier) @name) @fn". Language auto-detects per file; restrict with language=go|python|typescript|tsx.`
 }
 
-func (CodeMatchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"pattern": map[string]interface{}{
-				"type":        "string",
-				"description": "Tree-sitter query pattern (S-expression). Captures (@name) are returned per match.",
-			},
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Project directory (default: session working directory).",
-			},
-			"language": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"go", "python", "typescript", "tsx"},
-				"description": "Restrict to one language (default: all supported).",
-			},
-			"limit": map[string]interface{}{
-				"type":        "integer",
-				"minimum":     1,
-				"maximum":     200,
-				"description": "Maximum matches total (default 30).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (CodeMatchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"pattern":  {Type: "string", Description: "Tree-sitter query pattern (S-expression). Captures (@name) are returned per match."},
+			"path":     {Type: "string", Description: "Project directory (default: session working directory)."},
+			"language": {Type: "string", Enum: []interface{}{"go", "python", "typescript", "tsx"}, Description: "Restrict to one language (default: all supported)."},
+			"limit":    {Type: "integer", Minimum: 1, Maximum: 200, Description: "Maximum matches total (default 30)."},
 		},
-		"required": []string{"pattern"},
+		Required: []string{"pattern"},
 	}
 }
+
+func (CodeMatchTool) Parameters() map[string]interface{} {
+	return codeMatchSchema.ToJSONSchema()
+}
+
+// codeMatchSchema is the single source of truth for CodeMatch's input schema.
+var codeMatchSchema = CodeMatchTool{}.Schema()
 
 // codeMatchHit is one structural match.
 type codeMatchHit struct {
@@ -73,14 +75,9 @@ var codeMatchExtLang = map[string]string{
 }
 
 func (CodeMatchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Pattern  string `json:"pattern"`
-		Path     string `json:"path"`
-		Language string `json:"language"`
-		Limit    int    `json:"limit"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[CodeMatchInput]("CodeMatch", input)
+	if err != nil {
+		return "", err
 	}
 	params.Pattern = strings.TrimSpace(params.Pattern)
 	if params.Pattern == "" {

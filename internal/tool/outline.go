@@ -15,6 +15,12 @@ import (
 // reading the full content. Returns a compact outline with line numbers.
 type OutlineTool struct{}
 
+// OutlineInput is the typed input for OutlineTool.
+type OutlineInput struct {
+	FilePath  string   `json:"file_path"`
+	FilePaths []string `json:"file_paths,omitempty"`
+}
+
 func (OutlineTool) Name() string      { return "Outline" }
 func (OutlineTool) RiskLevel() string { return "low" }
 func (OutlineTool) Aliases() []string { return []string{"outline"} }
@@ -22,31 +28,30 @@ func (OutlineTool) Description() string {
 	return "Extract function/type/class signatures from one or more files. Returns a compact outline with line numbers — much cheaper than reading the full file."
 }
 
-func (OutlineTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"file_path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path to a single file, relative to the project root (e.g. 'src/main.go')",
-			},
-			"file_paths": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Paths to multiple files. Use instead of file_path to outline several files in one call (max 20).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (OutlineTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"file_path":  {Type: "string", Description: "Path to a single file, relative to the project root (e.g. 'src/main.go')"},
+			"file_paths": {Type: "array", Items: &SchemaProperty{Type: "string"}, Description: "Paths to multiple files. Use instead of file_path to outline several files in one call (max 20)."},
 		},
 	}
 }
 
+func (OutlineTool) Parameters() map[string]interface{} {
+	return outlineSchema.ToJSONSchema()
+}
+
+// outlineSchema is the single source of truth for Outline's input schema.
+var outlineSchema = OutlineTool{}.Schema()
+
 const outlineMaxFiles = 20
 
 func (OutlineTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var in struct {
-		FilePath  string   `json:"file_path"`
-		FilePaths []string `json:"file_paths,omitempty"`
-	}
-	if err := json.Unmarshal(input, &in); err != nil {
+	in, err := DecodeInput[OutlineInput]("Outline", input)
+	if err != nil {
 		return "", err
 	}
 

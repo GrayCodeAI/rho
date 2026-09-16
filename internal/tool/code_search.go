@@ -10,6 +10,14 @@ import (
 // CodeSearchTool searches the codebase semantically.
 type CodeSearchTool struct{}
 
+// CodeSearchInput is the typed input for CodeSearchTool.
+type CodeSearchInput struct {
+	Query    string `json:"query"`
+	Limit    int    `json:"limit"`
+	Language string `json:"language"`
+	Refresh  bool   `json:"refresh"`
+}
+
 func (CodeSearchTool) Name() string      { return "CodeSearch" }
 func (CodeSearchTool) RiskLevel() string { return "low" }
 
@@ -19,40 +27,32 @@ func (CodeSearchTool) Description() string {
 	return `Semantic code search over the local code index. Use this instead of Grep when you need to find implementations by meaning, not exact text. Start with limit=5; if results look relevant, use offset to paginate. Set refresh=true to update the index first.`
 }
 
-func (CodeSearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "The semantic search query describing what you are looking for.",
-			},
-			"limit": map[string]interface{}{
-				"type":        "integer",
-				"description": "Maximum number of results to return (default 5).",
-			},
-			"language": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional language filter (e.g. go, python, typescript).",
-			},
-			"refresh": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, refresh the code index before searching.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (CodeSearchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"query":    {Type: "string", Description: "The semantic search query describing what you are looking for."},
+			"limit":    {Type: "integer", Description: "Maximum number of results to return (default 5)."},
+			"language": {Type: "string", Description: "Optional language filter (e.g. go, python, typescript)."},
+			"refresh":  {Type: "boolean", Description: "If true, refresh the code index before searching."},
 		},
-		"required": []string{"query"},
+		Required: []string{"query"},
 	}
 }
 
+func (CodeSearchTool) Parameters() map[string]interface{} {
+	return codeSearchSchema.ToJSONSchema()
+}
+
+// codeSearchSchema is the single source of truth for CodeSearch's input schema.
+var codeSearchSchema = CodeSearchTool{}.Schema()
+
 func (CodeSearchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Query    string `json:"query"`
-		Limit    int    `json:"limit"`
-		Language string `json:"language"`
-		Refresh  bool   `json:"refresh"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[CodeSearchInput]("CodeSearch", input)
+	if err != nil {
+		return "", err
 	}
 
 	if params.Query == "" {
