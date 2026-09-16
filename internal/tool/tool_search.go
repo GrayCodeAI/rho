@@ -10,6 +10,12 @@ import (
 
 type ToolSearchTool struct{}
 
+// ToolSearchInput is the typed input for ToolSearchTool.
+type ToolSearchInput struct {
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
+}
+
 func (ToolSearchTool) Name() string      { return "ToolSearch" }
 func (ToolSearchTool) RiskLevel() string { return "low" }
 func (ToolSearchTool) Aliases() []string { return []string{"tool_search"} }
@@ -17,23 +23,29 @@ func (ToolSearchTool) Description() string {
 	return `Search available tools by name or description. Use query "select:<tool_name>" for direct selection.`
 }
 
-func (ToolSearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"query":       map[string]interface{}{"type": "string", "description": `Search terms, or "select:<tool_name>"`},
-			"max_results": map[string]interface{}{"type": "integer", "description": "Maximum results to return (default 5)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ToolSearchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"query":       {Type: "string", Description: `Search terms, or "select:<tool_name>"`},
+			"max_results": {Type: "integer", Description: "Maximum results to return (default 5)"},
 		},
-		"required": []string{"query"},
+		Required: []string{"query"},
 	}
 }
 
+func (ToolSearchTool) Parameters() map[string]interface{} {
+	return toolSearchSchema.ToJSONSchema()
+}
+
+// toolSearchSchema is the single source of truth for ToolSearch's input schema.
+var toolSearchSchema = ToolSearchTool{}.Schema()
+
 func (ToolSearchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Query      string `json:"query"`
-		MaxResults int    `json:"max_results"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ToolSearchInput]("ToolSearch", input)
+	if err != nil {
 		return "", err
 	}
 	p.Query = strings.TrimSpace(p.Query)
