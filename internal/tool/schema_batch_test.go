@@ -1232,3 +1232,74 @@ func TestTaskStopSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [task_id]", TaskStopTool{}.Parameters()["required"])
 	}
 }
+
+func TestAgentSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = AgentTool{}
+	props := schemaProps(t, AgentTool{}.Parameters())
+	if props["prompt"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("prompt type wrong")
+	}
+	subEnum, ok := props["subagent_type"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(subEnum) != 4 || subEnum[0] != "explore" || subEnum[3] != "general" {
+		t.Fatalf("subagent_type enum = %v, want 4 options", props["subagent_type"])
+	}
+	capEnum, ok := props["capability_mode"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(capEnum) != 4 || capEnum[0] != "read-only" || capEnum[3] != "all" {
+		t.Fatalf("capability_mode enum = %v, want 4 options", props["capability_mode"])
+	}
+	if props["run_in_background"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("run_in_background type wrong")
+	}
+	req, _ := AgentTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "prompt" {
+		t.Fatalf("required = %v, want [prompt]", AgentTool{}.Parameters()["required"])
+	}
+}
+
+func TestCodeGraphSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = CodeGraphTool{}
+	props := schemaProps(t, CodeGraphTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 21 || enum[0] != "search" || enum[20] != "hybrid_search" {
+		t.Fatalf("action enum has %d options, want 21", len(enum))
+	}
+	if props["max_depth"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_depth type wrong")
+	}
+	if props["query"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+	req, _ := CodeGraphTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", CodeGraphTool{}.Parameters()["required"])
+	}
+}
+
+func TestPRGeneratorSchemaProvider(t *testing.T) {
+	var inter SchemaProvider = (&PRGeneratorTool{})
+	_ = inter
+	props := schemaProps(t, (&PRGeneratorTool{}).Parameters())
+	base := props["base_branch"].(map[string]interface{})
+	if base["type"] != "string" {
+		t.Fatal("base_branch type wrong")
+	}
+	if base["default"] != "main" {
+		t.Fatalf("base_branch default = %v, want main", base["default"])
+	}
+	if props["project_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("project_dir type wrong")
+	}
+}
+
+func TestSmartCreateSchemaProvider(t *testing.T) {
+	var inter SchemaProvider = (&SmartCreateTool{})
+	_ = inter
+	props := schemaProps(t, (&SmartCreateTool{}).Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	req, _ := (&SmartCreateTool{}).Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "path" {
+		t.Fatalf("required = %v, want [path]", (&SmartCreateTool{}).Parameters()["required"])
+	}
+}
