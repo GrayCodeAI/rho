@@ -14,35 +14,40 @@ import (
 // function calls, interfaces, and complex control flow.
 type NilAwayTool struct{}
 
+// NilAwayInput is the typed input for NilAwayTool.
+type NilAwayInput struct {
+	Path string `json:"path"`
+	Fix  bool   `json:"fix"`
+}
+
 func (NilAwayTool) Name() string      { return "NilAway" }
 func (NilAwayTool) Aliases() []string { return []string{"nilaway", "nil"} }
 func (NilAwayTool) Description() string {
 	return "Detect potential nil panics using NilAway static analyzer. Catches nil pointer dereferences that other linters miss."
 }
 
-func (NilAwayTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path to analyze (default: current directory)",
-			},
-			"fix": map[string]interface{}{
-				"type":        "boolean",
-				"description": "Show suggested fixes",
-				"default":     false,
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (NilAwayTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path": {Type: "string", Description: "Path to analyze (default: current directory)"},
+			"fix":  {Type: "boolean", Description: "Show suggested fixes", Default: false},
 		},
 	}
 }
 
+func (NilAwayTool) Parameters() map[string]interface{} {
+	return nilAwaySchema.ToJSONSchema()
+}
+
+// nilAwaySchema is the single source of truth for NilAway's input schema.
+var nilAwaySchema = NilAwayTool{}.Schema()
+
 func (NilAwayTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path string `json:"path"`
-		Fix  bool   `json:"fix"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[NilAwayInput]("NilAway", input)
+	if err != nil {
 		return "", err
 	}
 
@@ -121,34 +126,40 @@ type Position struct {
 // Research shows revive is 6x faster than golint with more rules.
 type ReviveTool struct{}
 
+// ReviveInput is the typed input for ReviveTool.
+type ReviveInput struct {
+	Path   string `json:"path"`
+	Config string `json:"config"`
+}
+
 func (ReviveTool) Name() string      { return "Revive" }
 func (ReviveTool) Aliases() []string { return []string{"revive"} }
 func (ReviveTool) Description() string {
 	return "Fast Go linter (6x faster than golint). Configurable rules for code quality."
 }
 
-func (ReviveTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path to lint (default: current directory)",
-			},
-			"config": map[string]interface{}{
-				"type":        "string",
-				"description": "Config file path (default: uses defaults)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ReviveTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":   {Type: "string", Description: "Path to lint (default: current directory)"},
+			"config": {Type: "string", Description: "Config file path (default: uses defaults)"},
 		},
 	}
 }
 
+func (ReviveTool) Parameters() map[string]interface{} {
+	return reviveSchema.ToJSONSchema()
+}
+
+// reviveSchema is the single source of truth for Revive's input schema.
+var reviveSchema = ReviveTool{}.Schema()
+
 func (ReviveTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path   string `json:"path"`
-		Config string `json:"config"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ReviveInput]("Revive", input)
+	if err != nil {
 		return "", err
 	}
 

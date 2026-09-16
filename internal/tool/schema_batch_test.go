@@ -796,3 +796,96 @@ func TestToolHealthSchemaProvider(t *testing.T) {
 		t.Fatal("include_optional type wrong")
 	}
 }
+
+func TestMcpAuthSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = McpAuthTool{}
+	props := schemaProps(t, McpAuthTool{}.Parameters())
+	if props["server_name"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("server_name type wrong")
+	}
+	req, _ := McpAuthTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "server_name" || req[1] != "server_url" {
+		t.Fatalf("required = %v, want [server_name server_url]", McpAuthTool{}.Parameters()["required"])
+	}
+}
+
+func TestMCPLanguageServerSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = MCPLanguageServerTool{}
+	props := schemaProps(t, MCPLanguageServerTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 6 || enum[0] != "definition" || enum[5] != "symbols" {
+		t.Fatalf("action enum = %v, want 6 options", props["action"])
+	}
+	req, _ := MCPLanguageServerTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", MCPLanguageServerTool{}.Parameters()["required"])
+	}
+}
+
+func TestListMcpResourcesSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ListMcpResourcesTool{}
+	props := schemaProps(t, ListMcpResourcesTool{}.Parameters())
+	if props["server"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("server type wrong")
+	}
+}
+
+func TestReadMcpResourceSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ReadMcpResourceTool{}
+	props := schemaProps(t, ReadMcpResourceTool{}.Parameters())
+	if props["server"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("server type wrong")
+	}
+	if props["uri"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("uri type wrong")
+	}
+	req, _ := ReadMcpResourceTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "server" || req[1] != "uri" {
+		t.Fatalf("required = %v, want [server uri]", ReadMcpResourceTool{}.Parameters()["required"])
+	}
+}
+
+func TestNilAwaySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = NilAwayTool{}
+	props := schemaProps(t, NilAwayTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	if props["fix"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("fix type wrong")
+	}
+	fixDefault := props["fix"].(map[string]interface{})["default"]
+	if fixDefault != false {
+		t.Fatalf("fix default = %v, want false", fixDefault)
+	}
+}
+
+func TestReviveSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ReviveTool{}
+	props := schemaProps(t, ReviveTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	if props["config"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("config type wrong")
+	}
+}
+
+func TestAgenticFetchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = AgenticFetchTool{}
+	props := schemaProps(t, AgenticFetchTool{}.Parameters())
+	if props["url"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("url type wrong")
+	}
+	urls := props["urls"].(map[string]interface{})
+	if urls["type"] != "array" {
+		t.Fatalf("urls type = %v, want array", urls["type"])
+	}
+	items, ok := urls["items"].(map[string]interface{})
+	if !ok || items["type"] != "string" {
+		t.Fatalf("urls items = %v, want string", urls["items"])
+	}
+	if props["query"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+}
