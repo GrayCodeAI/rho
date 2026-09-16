@@ -1091,3 +1091,144 @@ func TestTicketComplianceSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [ticket_content diff]", (&TicketComplianceTool{}).Parameters()["required"])
 	}
 }
+
+func TestWaitTasksSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = WaitTasksTool{}
+	props := schemaProps(t, WaitTasksTool{}.Parameters())
+	if props["task_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("task_id type wrong")
+	}
+	ids := props["task_ids"].(map[string]interface{})
+	if ids["type"] != "array" {
+		t.Fatalf("task_ids type = %v, want array", ids["type"])
+	}
+	if ids["items"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("task_ids items type wrong")
+	}
+	if props["timeout_sec"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("timeout_sec type wrong")
+	}
+}
+
+func TestKillTaskSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = KillTaskTool{}
+	props := schemaProps(t, KillTaskTool{}.Parameters())
+	if props["task_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("task_id type wrong")
+	}
+	req, _ := KillTaskTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "task_id" {
+		t.Fatalf("required = %v, want [task_id]", KillTaskTool{}.Parameters()["required"])
+	}
+}
+
+func TestMonitorSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = MonitorTool{}
+	props := schemaProps(t, MonitorTool{}.Parameters())
+	if props["command"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("command type wrong")
+	}
+	if props["max_runtime_sec"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_runtime_sec type wrong")
+	}
+	if props["max_lines_per_sec"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_lines_per_sec type wrong")
+	}
+	req, _ := MonitorTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "command" {
+		t.Fatalf("required = %v, want [command]", MonitorTool{}.Parameters()["required"])
+	}
+}
+
+func TestTaskCreateSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskCreateTool{}
+	props := schemaProps(t, TaskCreateTool{}.Parameters())
+	if props["subject"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("subject type wrong")
+	}
+	deps := props["dependencies"].(map[string]interface{})
+	if deps["type"] != "array" {
+		t.Fatalf("dependencies type = %v, want array", deps["type"])
+	}
+	depProps := deps["items"].(map[string]interface{})["properties"].(map[string]interface{})
+	depTypeEnum, ok := depProps["type"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(depTypeEnum) != 3 || depTypeEnum[0] != "blocks" || depTypeEnum[2] != "parent-child" {
+		t.Fatalf("dependency type enum = %v, want 3 options", depProps["type"])
+	}
+	if props["metadata"].(map[string]interface{})["type"] != "object" {
+		t.Fatal("metadata type wrong")
+	}
+	req, _ := TaskCreateTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "subject" || req[1] != "description" {
+		t.Fatalf("required = %v, want [subject description]", TaskCreateTool{}.Parameters()["required"])
+	}
+}
+
+func TestTaskGetSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskGetTool{}
+	props := schemaProps(t, TaskGetTool{}.Parameters())
+	if props["taskId"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("taskId type wrong")
+	}
+	req, _ := TaskGetTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "taskId" {
+		t.Fatalf("required = %v, want [taskId]", TaskGetTool{}.Parameters()["required"])
+	}
+}
+
+func TestTaskListSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskListTool{}
+	props := schemaProps(t, TaskListTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "list" || enum[3] != "compact" {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+}
+
+func TestTaskUpdateSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskUpdateTool{}
+	props := schemaProps(t, TaskUpdateTool{}.Parameters())
+	enum, ok := props["status"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 7 || enum[0] != "pending" || enum[6] != "cancelled" {
+		t.Fatalf("status enum = %v, want 7 options", props["status"])
+	}
+	req, _ := TaskUpdateTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "taskId" {
+		t.Fatalf("required = %v, want [taskId]", TaskUpdateTool{}.Parameters()["required"])
+	}
+}
+
+func TestTaskRunSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskRunTool{}
+	props := schemaProps(t, TaskRunTool{}.Parameters())
+	if props["timeout_sec"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("timeout_sec type wrong")
+	}
+	if props["max_total_tasks"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_total_tasks type wrong")
+	}
+}
+
+func TestTaskOutputSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskOutputTool{}
+	props := schemaProps(t, TaskOutputTool{}.Parameters())
+	if props["task_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("task_id type wrong")
+	}
+	req, _ := TaskOutputTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "task_id" {
+		t.Fatalf("required = %v, want [task_id]", TaskOutputTool{}.Parameters()["required"])
+	}
+}
+
+func TestTaskStopSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TaskStopTool{}
+	props := schemaProps(t, TaskStopTool{}.Parameters())
+	if props["task_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("task_id type wrong")
+	}
+	req, _ := TaskStopTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "task_id" {
+		t.Fatalf("required = %v, want [task_id]", TaskStopTool{}.Parameters()["required"])
+	}
+}

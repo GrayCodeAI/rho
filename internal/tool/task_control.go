@@ -71,6 +71,13 @@ func killTask(ctx context.Context, id string) error {
 // WaitTasksTool waits for one or more background tasks.
 type WaitTasksTool struct{}
 
+// WaitTasksInput is the typed input for WaitTasksTool.
+type WaitTasksInput struct {
+	TaskID     string   `json:"task_id"`
+	TaskIDs    []string `json:"task_ids"`
+	TimeoutSec int      `json:"timeout_sec"`
+}
+
 func (WaitTasksTool) Name() string      { return "WaitTasks" }
 func (WaitTasksTool) Aliases() []string { return []string{"wait_tasks", "GetTaskOutput"} }
 func (WaitTasksTool) RiskLevel() string { return "low" }
@@ -79,34 +86,29 @@ func (WaitTasksTool) Description() string {
 		"Works for shell (Bash run_in_background), agent spawns, and Monitor tasks."
 }
 
-func (WaitTasksTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"task_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Single task ID to wait for",
-			},
-			"task_ids": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Multiple task IDs to wait for",
-			},
-			"timeout_sec": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max seconds to wait (default 120, max 600)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (WaitTasksTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"task_id":     {Type: "string", Description: "Single task ID to wait for"},
+			"task_ids":    {Type: "array", Items: &SchemaProperty{Type: "string"}, Description: "Multiple task IDs to wait for"},
+			"timeout_sec": {Type: "integer", Description: "Max seconds to wait (default 120, max 600)"},
 		},
 	}
 }
 
+func (WaitTasksTool) Parameters() map[string]interface{} {
+	return waitTasksSchema.ToJSONSchema()
+}
+
+// waitTasksSchema is the single source of truth for WaitTasks' input schema.
+var waitTasksSchema = WaitTasksTool{}.Schema()
+
 func (WaitTasksTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID     string   `json:"task_id"`
-		TaskIDs    []string `json:"task_ids"`
-		TimeoutSec int      `json:"timeout_sec"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[WaitTasksInput]("WaitTasks", input)
+	if err != nil {
 		return "", err
 	}
 	ids := append([]string{}, p.TaskIDs...)
@@ -165,6 +167,11 @@ func (WaitTasksTool) Execute(ctx context.Context, input json.RawMessage) (string
 // KillTaskTool stops a running background task.
 type KillTaskTool struct{}
 
+// KillTaskInput is the typed input for KillTaskTool.
+type KillTaskInput struct {
+	TaskID string `json:"task_id"`
+}
+
 func (KillTaskTool) Name() string      { return "KillTask" }
 func (KillTaskTool) Aliases() []string { return []string{"kill_task"} }
 func (KillTaskTool) RiskLevel() string { return "medium" }
@@ -172,21 +179,28 @@ func (KillTaskTool) Description() string {
 	return "Kill a running background shell, agent, or monitor task by task_id."
 }
 
-func (KillTaskTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"task_id": map[string]interface{}{"type": "string", "description": "Background task ID"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (KillTaskTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"task_id": {Type: "string", Description: "Background task ID"},
 		},
-		"required": []string{"task_id"},
+		Required: []string{"task_id"},
 	}
 }
 
+func (KillTaskTool) Parameters() map[string]interface{} {
+	return killTaskSchema.ToJSONSchema()
+}
+
+// killTaskSchema is the single source of truth for KillTask's input schema.
+var killTaskSchema = KillTaskTool{}.Schema()
+
 func (KillTaskTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID string `json:"task_id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[KillTaskInput]("KillTask", input)
+	if err != nil {
 		return "", err
 	}
 	if p.TaskID == "" {
@@ -201,6 +215,14 @@ func (KillTaskTool) Execute(ctx context.Context, input json.RawMessage) (string,
 // MonitorTool runs a command, streams lines into a background task, with rate limits.
 type MonitorTool struct{}
 
+// MonitorInput is the typed input for MonitorTool.
+type MonitorInput struct {
+	Command        string `json:"command"`
+	MaxRuntimeSec  int    `json:"max_runtime_sec"`
+	MaxLinesPerSec int    `json:"max_lines_per_sec"`
+	Description    string `json:"description"`
+}
+
 func (MonitorTool) Name() string      { return "Monitor" }
 func (MonitorTool) Aliases() []string { return []string{"monitor"} }
 func (MonitorTool) RiskLevel() string { return "medium" }
@@ -210,39 +232,31 @@ func (MonitorTool) Description() string {
 		"Rate-limited (max lines/sec) and auto-killed after max_runtime_sec."
 }
 
-func (MonitorTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"command": map[string]interface{}{
-				"type":        "string",
-				"description": "Shell command to monitor (e.g. 'tail -f log' or 'npm run dev')",
-			},
-			"max_runtime_sec": map[string]interface{}{
-				"type":        "integer",
-				"description": "Auto-kill after this many seconds (default 300, max 3600)",
-			},
-			"max_lines_per_sec": map[string]interface{}{
-				"type":        "integer",
-				"description": "Drop excess lines above this rate (default 50)",
-			},
-			"description": map[string]interface{}{
-				"type":        "string",
-				"description": "Short label for the monitor task",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (MonitorTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"command":           {Type: "string", Description: "Shell command to monitor (e.g. 'tail -f log' or 'npm run dev')"},
+			"max_runtime_sec":   {Type: "integer", Description: "Auto-kill after this many seconds (default 300, max 3600)"},
+			"max_lines_per_sec": {Type: "integer", Description: "Drop excess lines above this rate (default 50)"},
+			"description":       {Type: "string", Description: "Short label for the monitor task"},
 		},
-		"required": []string{"command"},
+		Required: []string{"command"},
 	}
 }
 
+func (MonitorTool) Parameters() map[string]interface{} {
+	return monitorSchema.ToJSONSchema()
+}
+
+// monitorSchema is the single source of truth for Monitor's input schema.
+var monitorSchema = MonitorTool{}.Schema()
+
 func (MonitorTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Command        string `json:"command"`
-		MaxRuntimeSec  int    `json:"max_runtime_sec"`
-		MaxLinesPerSec int    `json:"max_lines_per_sec"`
-		Description    string `json:"description"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[MonitorInput]("Monitor", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.Command) == "" {

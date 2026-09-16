@@ -212,34 +212,53 @@ func (s *TaskStore) CompactCompleted() string {
 // TaskCreateTool creates a new task in the task list.
 type TaskCreateTool struct{}
 
+// TaskCreateInput is the typed input for TaskCreateTool.
+type TaskCreateInput struct {
+	Subject      string           `json:"subject"`
+	Description  string           `json:"description"`
+	ActiveForm   string           `json:"activeForm"`
+	ParentID     string           `json:"parentId"`
+	Dependencies []TaskDependency `json:"dependencies"`
+	Metadata     map[string]any   `json:"metadata"`
+}
+
 func (TaskCreateTool) Name() string        { return "TaskCreate" }
 func (TaskCreateTool) Aliases() []string   { return []string{"task_create"} }
 func (TaskCreateTool) Description() string { return "Create a new task in the task list" }
-func (TaskCreateTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"subject":      map[string]interface{}{"type": "string", "description": "A brief title for the task"},
-			"description":  map[string]interface{}{"type": "string", "description": "What needs to be done"},
-			"activeForm":   map[string]interface{}{"type": "string", "description": "Present continuous form shown in spinner when in_progress (e.g., \"Running tests\")"},
-			"parentId":     map[string]interface{}{"type": "string", "description": "Parent task ID for hierarchical tasks"},
-			"dependencies": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"targetId": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string", "enum": []string{"blocks", "related", "parent-child"}}}}, "description": "Typed dependencies"},
-			"metadata":     map[string]interface{}{"type": "object", "description": "Arbitrary metadata to attach to the task"},
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskCreateTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"subject":     {Type: "string", Description: "A brief title for the task"},
+			"description": {Type: "string", Description: "What needs to be done"},
+			"activeForm":  {Type: "string", Description: "Present continuous form shown in spinner when in_progress (e.g., \"Running tests\")"},
+			"parentId":    {Type: "string", Description: "Parent task ID for hierarchical tasks"},
+			"dependencies": {Type: "array", Items: &SchemaProperty{
+				Type: "object",
+				Properties: map[string]SchemaProperty{
+					"targetId": {Type: "string"},
+					"type":     {Type: "string", Enum: []interface{}{"blocks", "related", "parent-child"}},
+				},
+			}, Description: "Typed dependencies"},
+			"metadata": {Type: "object", Description: "Arbitrary metadata to attach to the task"},
 		},
-		"required": []string{"subject", "description"},
+		Required: []string{"subject", "description"},
 	}
 }
 
+func (TaskCreateTool) Parameters() map[string]interface{} {
+	return taskCreateSchema.ToJSONSchema()
+}
+
+// taskCreateSchema is the single source of truth for TaskCreate's input schema.
+var taskCreateSchema = TaskCreateTool{}.Schema()
+
 func (TaskCreateTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Subject      string           `json:"subject"`
-		Description  string           `json:"description"`
-		ActiveForm   string           `json:"activeForm"`
-		ParentID     string           `json:"parentId"`
-		Dependencies []TaskDependency `json:"dependencies"`
-		Metadata     map[string]any   `json:"metadata"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TaskCreateInput]("TaskCreate", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Subject == "" {
@@ -263,24 +282,37 @@ func (TaskCreateTool) Execute(_ context.Context, input json.RawMessage) (string,
 // TaskGetTool retrieves a task by ID.
 type TaskGetTool struct{}
 
+// TaskGetInput is the typed input for TaskGetTool.
+type TaskGetInput struct {
+	TaskID string `json:"taskId"`
+}
+
 func (TaskGetTool) Name() string        { return "TaskGet" }
 func (TaskGetTool) Aliases() []string   { return []string{"task_get"} }
 func (TaskGetTool) Description() string { return "Get a task by ID from the task list" }
-func (TaskGetTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"taskId": map[string]interface{}{"type": "string", "description": "The ID of the task to retrieve"},
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskGetTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"taskId": {Type: "string", Description: "The ID of the task to retrieve"},
 		},
-		"required": []string{"taskId"},
+		Required: []string{"taskId"},
 	}
 }
 
+func (TaskGetTool) Parameters() map[string]interface{} {
+	return taskGetSchema.ToJSONSchema()
+}
+
+// taskGetSchema is the single source of truth for TaskGet's input schema.
+var taskGetSchema = TaskGetTool{}.Schema()
+
 func (TaskGetTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID string `json:"taskId"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TaskGetInput]("TaskGet", input)
+	if err != nil {
 		return "", err
 	}
 	task, ok := globalTaskStore.Get(p.TaskID)
@@ -313,25 +345,41 @@ func (TaskGetTool) Execute(_ context.Context, input json.RawMessage) (string, er
 // TaskListTool lists all tasks.
 type TaskListTool struct{}
 
+// TaskListInput is the typed input for TaskListTool.
+type TaskListInput struct {
+	Action string `json:"action"`
+}
+
 func (TaskListTool) Name() string        { return "TaskList" }
 func (TaskListTool) Aliases() []string   { return []string{"task_list"} }
 func (TaskListTool) Description() string { return "List all tasks, ready tasks, or compact completed" }
 
-func (TaskListTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{"type": "string", "enum": []string{"list", "ready", "failed", "compact"}, "description": "Action: list (default), ready (pending with no blockers), failed (replan candidates), compact (remove completed)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskListTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"list", "ready", "failed", "compact"}, Description: "Action: list (default), ready (pending with no blockers), failed (replan candidates), compact (remove completed)"},
 		},
 	}
 }
 
+func (TaskListTool) Parameters() map[string]interface{} {
+	return taskListSchema.ToJSONSchema()
+}
+
+// taskListSchema is the single source of truth for TaskList's input schema.
+var taskListSchema = TaskListTool{}.Schema()
+
 func (TaskListTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p TaskListInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[TaskListInput]("TaskList", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 
 	switch p.Action {
@@ -393,31 +441,49 @@ func (TaskListTool) Execute(_ context.Context, input json.RawMessage) (string, e
 // TaskUpdateTool updates task fields.
 type TaskUpdateTool struct{}
 
+// TaskUpdateInput is the typed input for TaskUpdateTool.
+type TaskUpdateInput struct {
+	TaskID       string           `json:"taskId"`
+	Status       string           `json:"status"`
+	Owner        string           `json:"owner"`
+	Dependencies []TaskDependency `json:"dependencies"`
+}
+
 func (TaskUpdateTool) Name() string        { return "TaskUpdate" }
 func (TaskUpdateTool) Aliases() []string   { return []string{"task_update"} }
 func (TaskUpdateTool) Description() string { return "Update a task's status, owner, or dependencies" }
 
-func (TaskUpdateTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"taskId":       map[string]interface{}{"type": "string", "description": "The ID of the task to update"},
-			"status":       map[string]interface{}{"type": "string", "enum": []string{"pending", "in_progress", "reviewing", "completed", "failed", "skipped", "cancelled"}, "description": "New task status"},
-			"owner":        map[string]interface{}{"type": "string", "description": "Agent name to assign"},
-			"dependencies": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "object", "properties": map[string]interface{}{"targetId": map[string]interface{}{"type": "string"}, "type": map[string]interface{}{"type": "string", "enum": []string{"blocks", "related", "parent-child"}}}}, "description": "Replace dependencies"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TaskUpdateTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"taskId": {Type: "string", Description: "The ID of the task to update"},
+			"status": {Type: "string", Enum: []interface{}{"pending", "in_progress", "reviewing", "completed", "failed", "skipped", "cancelled"}, Description: "New task status"},
+			"owner":  {Type: "string", Description: "Agent name to assign"},
+			"dependencies": {Type: "array", Items: &SchemaProperty{
+				Type: "object",
+				Properties: map[string]SchemaProperty{
+					"targetId": {Type: "string"},
+					"type":     {Type: "string", Enum: []interface{}{"blocks", "related", "parent-child"}},
+				},
+			}, Description: "Replace dependencies"},
 		},
-		"required": []string{"taskId"},
+		Required: []string{"taskId"},
 	}
 }
 
+func (TaskUpdateTool) Parameters() map[string]interface{} {
+	return taskUpdateSchema.ToJSONSchema()
+}
+
+// taskUpdateSchema is the single source of truth for TaskUpdate's input schema.
+var taskUpdateSchema = TaskUpdateTool{}.Schema()
+
 func (TaskUpdateTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TaskID       string           `json:"taskId"`
-		Status       string           `json:"status"`
-		Owner        string           `json:"owner"`
-		Dependencies []TaskDependency `json:"dependencies"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[TaskUpdateInput]("TaskUpdate", input)
+	if err != nil {
 		return "", err
 	}
 	if p.TaskID == "" {
