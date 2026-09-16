@@ -220,49 +220,43 @@ func (CronCreateTool) Description() string {
 	return "Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time."
 }
 
-func (CronCreateTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"schedule": map[string]interface{}{
-				"type":        "string",
-				"description": "5-field cron expression in user's local timezone: minute hour day-of-month month day-of-week",
-			},
-			"prompt": map[string]interface{}{
-				"type":        "string",
-				"description": "The prompt to enqueue when the schedule fires",
-			},
-			"recurring": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, repeats on schedule. If false, fires once then auto-deletes (default: true)",
-			},
-			"durable": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, persists to disk and survives session restarts (default: false)",
-			},
-			"max_runs": map[string]interface{}{
-				"type":        "integer",
-				"description": "Stop after this many fires (0 = unlimited). Useful for /loop-style caps.",
-			},
-			"expires_in_sec": map[string]interface{}{
-				"type":        "integer",
-				"description": "Auto-delete job after this many seconds from creation (0 = never).",
-			},
+// CronCreateInput is the typed input for CronCreateTool.
+type CronCreateInput struct {
+	Schedule     string `json:"schedule"`
+	Prompt       string `json:"prompt"`
+	Recurring    *bool  `json:"recurring"`
+	Durable      *bool  `json:"durable"`
+	MaxRuns      int    `json:"max_runs"`
+	ExpiresInSec int    `json:"expires_in_sec"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (CronCreateTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"schedule":       {Type: "string", Description: "5-field cron expression in user's local timezone: minute hour day-of-month month day-of-week"},
+			"prompt":         {Type: "string", Description: "The prompt to enqueue when the schedule fires"},
+			"recurring":      {Type: "boolean", Description: "If true, repeats on schedule. If false, fires once then auto-deletes (default: true)"},
+			"durable":        {Type: "boolean", Description: "If true, persists to disk and survives session restarts (default: false)"},
+			"max_runs":       {Type: "integer", Description: "Stop after this many fires (0 = unlimited). Useful for /loop-style caps."},
+			"expires_in_sec": {Type: "integer", Description: "Auto-delete job after this many seconds from creation (0 = never)."},
 		},
-		"required": []string{"schedule", "prompt"},
+		Required: []string{"schedule", "prompt"},
 	}
 }
 
+func (CronCreateTool) Parameters() map[string]interface{} {
+	return cronCreateSchema.ToJSONSchema()
+}
+
+// cronCreateSchema is the single source of truth for CronCreate's input schema.
+var cronCreateSchema = CronCreateTool{}.Schema()
+
 func (CronCreateTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Schedule     string `json:"schedule"`
-		Prompt       string `json:"prompt"`
-		Recurring    *bool  `json:"recurring"`
-		Durable      *bool  `json:"durable"`
-		MaxRuns      int    `json:"max_runs"`
-		ExpiresInSec int    `json:"expires_in_sec"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[CronCreateInput]("CronCreate", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Schedule == "" {
@@ -317,24 +311,34 @@ type CronDeleteTool struct{}
 func (CronDeleteTool) Name() string        { return "CronDelete" }
 func (CronDeleteTool) Aliases() []string   { return []string{"cron_delete"} }
 func (CronDeleteTool) Description() string { return "Remove a scheduled cron job" }
-func (CronDeleteTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"id": map[string]interface{}{
-				"type":        "string",
-				"description": "The cron job ID to delete",
-			},
+
+// CronDeleteInput is the typed input for CronDeleteTool.
+type CronDeleteInput struct {
+	ID string `json:"id"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (CronDeleteTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"id": {Type: "string", Description: "The cron job ID to delete"},
 		},
-		"required": []string{"id"},
+		Required: []string{"id"},
 	}
 }
 
+func (CronDeleteTool) Parameters() map[string]interface{} {
+	return cronDeleteSchema.ToJSONSchema()
+}
+
+// cronDeleteSchema is the single source of truth for CronDelete's input schema.
+var cronDeleteSchema = CronDeleteTool{}.Schema()
+
 func (CronDeleteTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[CronDeleteInput]("CronDelete", input)
+	if err != nil {
 		return "", err
 	}
 	if !globalCronScheduler.Delete(p.ID) {
