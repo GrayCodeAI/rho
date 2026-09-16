@@ -1379,3 +1379,94 @@ func TestTerminalKillSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [terminal_id]", TerminalKillTool{}.Parameters()["required"])
 	}
 }
+
+func TestWebSearchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = WebSearchTool{}
+	props := schemaProps(t, WebSearchTool{}.Parameters())
+	query := props["query"].(map[string]interface{})
+	if query["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+	if query["maxLength"] != 2000 {
+		t.Fatalf("query maxLength = %v, want 2000", query["maxLength"])
+	}
+	queries := props["queries"].(map[string]interface{})
+	if queries["type"] != "array" {
+		t.Fatalf("queries type = %v, want array", queries["type"])
+	}
+	if queries["maxItems"] != 20 {
+		t.Fatalf("queries maxItems = %v, want 20", queries["maxItems"])
+	}
+	items := queries["items"].(map[string]interface{})
+	if items["type"] != "string" || items["maxLength"] != 2000 {
+		t.Fatalf("queries items = %v, want string+maxLength 2000", items)
+	}
+	num := props["numResults"].(map[string]interface{})
+	if num["default"] != 5 || num["minimum"] != 1 || num["maximum"] != 20 {
+		t.Fatalf("numResults = %v, want min/max/default", num)
+	}
+	st := props["searchType"].(map[string]interface{})
+	enum, ok := st["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "web" || enum[1] != "news" {
+		t.Fatalf("searchType enum = %v, want [web news]", st["enum"])
+	}
+	if st["default"] != "web" {
+		t.Fatalf("searchType default = %v, want web", st["default"])
+	}
+}
+
+func TestMultiAgentSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = MultiAgentTool{}
+	props := schemaProps(t, MultiAgentTool{}.Parameters())
+	tasks := props["tasks"].(map[string]interface{})
+	if tasks["type"] != "array" {
+		t.Fatalf("tasks type = %v, want array", tasks["type"])
+	}
+	if _, hasType := tasks["items"].(map[string]interface{})["type"]; hasType {
+		t.Fatal("tasks items must not have a type key (oneOf only)")
+	}
+	oneOf, ok := tasks["items"].(map[string]interface{})["oneOf"].([]interface{})
+	if !ok || len(oneOf) != 2 {
+		t.Fatalf("tasks items oneOf = %v, want 2 branches", tasks["items"])
+	}
+	if oneOf[0].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("oneOf[0] = %v, want string", oneOf[0])
+	}
+	obj := oneOf[1].(map[string]interface{})
+	if obj["type"] != "object" {
+		t.Fatalf("oneOf[1] type = %v, want object", obj["type"])
+	}
+	objReq, ok := obj["required"].([]string)
+	if !ok || len(objReq) != 1 || objReq[0] != "prompt" {
+		t.Fatalf("oneOf[1] required = %v, want [prompt]", obj["required"])
+	}
+	req, _ := MultiAgentTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "tasks" {
+		t.Fatalf("required = %v, want [tasks]", MultiAgentTool{}.Parameters()["required"])
+	}
+}
+
+func TestSchemaPropertyExtensions(t *testing.T) {
+	p := SchemaProperty{Type: "string", MaxLength: 10, MinLength: 1}
+	m := p.toMap()
+	if m["maxLength"] != 10 || m["minLength"] != 1 {
+		t.Fatalf("length bounds = %v", m)
+	}
+	a := SchemaProperty{Type: "array", Items: &SchemaProperty{Type: "string"}, MaxItems: 5, MinItems: 1}
+	am := a.toMap()
+	if am["maxItems"] != 5 || am["minItems"] != 1 {
+		t.Fatalf("item bounds = %v", am)
+	}
+	if am["items"].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("items = %v", am["items"])
+	}
+	o := SchemaProperty{OneOf: []SchemaProperty{{Type: "string"}, {Type: "integer"}}}
+	om := o.toMap()
+	if _, hasType := om["type"]; hasType {
+		t.Fatalf("typeless oneOf must omit type key: %v", om)
+	}
+	branches, ok := om["oneOf"].([]interface{})
+	if !ok || len(branches) != 2 || branches[0].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("oneOf = %v", om["oneOf"])
+	}
+}

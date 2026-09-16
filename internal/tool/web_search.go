@@ -30,55 +30,46 @@ type searchResult struct {
 
 type WebSearchTool struct{}
 
-func (WebSearchTool) Name() string      { return "WebSearch" }
+func (WebSearchTool) Name() string { return "WebSearch" }
+
+// WebSearchInput is the typed input for WebSearchTool.
+type WebSearchInput struct {
+	Query      string   `json:"query"`
+	Queries    []string `json:"queries"`
+	NumResults int      `json:"numResults"`
+	SearchType string   `json:"searchType"`
+}
+
 func (WebSearchTool) RiskLevel() string { return "low" }
 func (WebSearchTool) Aliases() []string { return []string{"web_search"} }
 func (WebSearchTool) Description() string {
 	return "Search the web and return structured results. Supports Brave Search, SearXNG, DeepSeek, Exa, Perplexity, and DuckDuckGo backends."
 }
 
-func (WebSearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "Search query. Provide this OR queries (not both).",
-				"maxLength":   maxWebSearchQueryLength,
-			},
-			"queries": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string", "maxLength": maxWebSearchQueryLength},
-				"maxItems":    maxWebSearchQueries,
-				"description": "Multiple search queries to run concurrently in a single call. Use this to research several things at once instead of issuing one WebSearch per query.",
-			},
-			"numResults": map[string]interface{}{
-				"type":        "integer",
-				"description": "Number of results to return (1-20)",
-				"minimum":     1,
-				"maximum":     20,
-				"default":     5,
-			},
-			"searchType": map[string]interface{}{
-				"type":        "string",
-				"description": "Type of search to perform",
-				"enum":        []string{"web", "news"},
-				"default":     "web",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (WebSearchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"query":      {Type: "string", Description: "Search query. Provide this OR queries (not both).", MaxLength: maxWebSearchQueryLength},
+			"queries":    {Type: "array", Items: &SchemaProperty{Type: "string", MaxLength: maxWebSearchQueryLength}, MaxItems: maxWebSearchQueries, Description: "Multiple search queries to run concurrently in a single call. Use this to research several things at once instead of issuing one WebSearch per query."},
+			"numResults": {Type: "integer", Description: "Number of results to return (1-20)", Minimum: 1, Maximum: 20, Default: 5},
+			"searchType": {Type: "string", Description: "Type of search to perform", Enum: []interface{}{"web", "news"}, Default: "web"},
 		},
-		// Either query or queries must be supplied; validated in Execute since
-		// JSON Schema "required" cannot express an exclusive-or cleanly.
 	}
 }
 
+func (WebSearchTool) Parameters() map[string]interface{} {
+	return webSearchSchema.ToJSONSchema()
+}
+
+// webSearchSchema is the single source of truth for WebSearch's input schema.
+var webSearchSchema = WebSearchTool{}.Schema()
+
 func (t WebSearchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Query      string   `json:"query"`
-		Queries    []string `json:"queries"`
-		NumResults int      `json:"numResults"`
-		SearchType string   `json:"searchType"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[WebSearchInput]("WebSearch", input)
+	if err != nil {
 		return "", err
 	}
 
