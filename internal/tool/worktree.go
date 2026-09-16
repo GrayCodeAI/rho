@@ -13,29 +13,41 @@ import (
 // EnterWorktreeTool switches to a git worktree.
 type EnterWorktreeTool struct{}
 
+// EnterWorktreeInput is the typed input for EnterWorktreeTool.
+type EnterWorktreeInput struct {
+	Path   string `json:"path"`
+	Branch string `json:"branch,omitempty"`
+}
+
 func (EnterWorktreeTool) Name() string      { return "EnterWorktree" }
 func (EnterWorktreeTool) Aliases() []string { return nil }
 func (EnterWorktreeTool) Description() string {
 	return "Switch to a git worktree directory."
 }
 
-func (EnterWorktreeTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path":   map[string]interface{}{"type": "string", "description": "Path to the worktree directory"},
-			"branch": map[string]interface{}{"type": "string", "description": "Branch to create/checkout (optional, creates worktree if path doesn't exist)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (EnterWorktreeTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":   {Type: "string", Description: "Path to the worktree directory"},
+			"branch": {Type: "string", Description: "Branch to create/checkout (optional, creates worktree if path doesn't exist)"},
 		},
-		"required": []string{"path"},
+		Required: []string{"path"},
 	}
 }
 
+func (EnterWorktreeTool) Parameters() map[string]interface{} {
+	return enterWorktreeSchema.ToJSONSchema()
+}
+
+// enterWorktreeSchema is the single source of truth for EnterWorktree's input schema.
+var enterWorktreeSchema = EnterWorktreeTool{}.Schema()
+
 func (EnterWorktreeTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path   string `json:"path"`
-		Branch string `json:"branch,omitempty"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[EnterWorktreeInput]("EnterWorktree", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Path == "" {
@@ -86,26 +98,40 @@ func (EnterWorktreeTool) Execute(ctx context.Context, input json.RawMessage) (st
 // ExitWorktreeTool returns to the main repository from a worktree.
 type ExitWorktreeTool struct{}
 
+// ExitWorktreeInput is the typed input for ExitWorktreeTool.
+type ExitWorktreeInput struct {
+	Cleanup bool `json:"cleanup,omitempty"`
+}
+
 func (ExitWorktreeTool) Name() string      { return "ExitWorktree" }
 func (ExitWorktreeTool) Aliases() []string { return nil }
 func (ExitWorktreeTool) Description() string {
 	return "Return to the main repository from a git worktree."
 }
 
-func (ExitWorktreeTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"cleanup": map[string]interface{}{"type": "boolean", "description": "Remove the worktree after exiting (default: false)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ExitWorktreeTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"cleanup": {Type: "boolean", Description: "Remove the worktree after exiting (default: false)"},
 		},
 	}
 }
 
+func (ExitWorktreeTool) Parameters() map[string]interface{} {
+	return exitWorktreeSchema.ToJSONSchema()
+}
+
+// exitWorktreeSchema is the single source of truth for ExitWorktree's input schema.
+var exitWorktreeSchema = ExitWorktreeTool{}.Schema()
+
 func (ExitWorktreeTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Cleanup bool `json:"cleanup,omitempty"`
+	p, err := DecodeInput[ExitWorktreeInput]("ExitWorktree", input)
+	if err != nil {
+		return "", err
 	}
-	_ = json.Unmarshal(input, &p)
 
 	// Find the main repository
 	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel").CombinedOutput()

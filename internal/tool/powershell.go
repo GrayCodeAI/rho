@@ -14,6 +14,12 @@ import (
 // PowerShellTool executes PowerShell commands (Windows/cross-platform pwsh).
 type PowerShellTool struct{}
 
+// PowerShellInput is the typed input for PowerShellTool.
+type PowerShellInput struct {
+	Command string `json:"command"`
+	Timeout int64  `json:"timeout"`
+}
+
 func (PowerShellTool) Name() string      { return "PowerShell" }
 func (PowerShellTool) RiskLevel() string { return "high" }
 func (PowerShellTool) Aliases() []string { return []string{"powershell"} }
@@ -21,29 +27,29 @@ func (PowerShellTool) Description() string {
 	return "Execute a PowerShell command. Use this instead of Bash when running on Windows or when PowerShell-specific cmdlets are needed."
 }
 
-func (PowerShellTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"command": map[string]interface{}{
-				"type":        "string",
-				"description": "The PowerShell command to execute",
-			},
-			"timeout": map[string]interface{}{
-				"type":        "number",
-				"description": "Timeout in milliseconds (max 600000, default 120000)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (PowerShellTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"command": {Type: "string", Description: "The PowerShell command to execute"},
+			"timeout": {Type: "number", Description: "Timeout in milliseconds (max 600000, default 120000)"},
 		},
-		"required": []string{"command"},
+		Required: []string{"command"},
 	}
 }
 
+func (PowerShellTool) Parameters() map[string]interface{} {
+	return powershellSchema.ToJSONSchema()
+}
+
+// powershellSchema is the single source of truth for PowerShell's input schema.
+var powershellSchema = PowerShellTool{}.Schema()
+
 func (PowerShellTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Command string `json:"command"`
-		Timeout int64  `json:"timeout"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[PowerShellInput]("PowerShell", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Command == "" {
@@ -78,7 +84,7 @@ func (PowerShellTool) Execute(ctx context.Context, input json.RawMessage) (strin
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	result := stdout.String()
 	if stderr.Len() > 0 {
 		if result != "" {

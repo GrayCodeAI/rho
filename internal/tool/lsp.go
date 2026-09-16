@@ -15,7 +15,19 @@ import (
 )
 
 type LSPTool struct {
+
+	// placeholder not used
 	Manager *lsp.LSPManager
+}
+
+// LSPInput is the typed input for LSPTool.
+type LSPInput struct {
+	Action string `json:"action"`
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
+	Symbol string `json:"symbol"`
+	Root   string `json:"root"`
 }
 
 func (LSPTool) Name() string      { return "LSP" }
@@ -24,31 +36,33 @@ func (LSPTool) Description() string {
 	return "Get code intelligence through configured language servers, with codegraph and local-tool fallbacks."
 }
 
-func (LSPTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{"type": "string", "enum": []string{"diagnostics", "definition", "references", "implementations"}, "description": "LSP action"},
-			"path":   map[string]interface{}{"type": "string", "description": "File path"},
-			"line":   map[string]interface{}{"type": "integer", "description": "Line number (1-based)"},
-			"column": map[string]interface{}{"type": "integer", "description": "Column number (1-based)"},
-			"symbol": map[string]interface{}{"type": "string", "description": "Symbol name to look up (alternative to line/column)"},
-			"root":   map[string]interface{}{"type": "string", "description": "Project root directory (default: current dir)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (LSPTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"diagnostics", "definition", "references", "implementations"}, Description: "LSP action"},
+			"path":   {Type: "string", Description: "File path"},
+			"line":   {Type: "integer", Description: "Line number (1-based)"},
+			"column": {Type: "integer", Description: "Column number (1-based)"},
+			"symbol": {Type: "string", Description: "Symbol name to look up (alternative to line/column)"},
+			"root":   {Type: "string", Description: "Project root directory (default: current dir)"},
 		},
-		"required": []string{"action", "path"},
+		Required: []string{"action", "path"},
 	}
 }
 
+func (LSPTool) Parameters() map[string]interface{} {
+	return lspSchema.ToJSONSchema()
+}
+
+// lspSchema is the single source of truth for LSP's input schema.
+var lspSchema = LSPTool{}.Schema()
+
 func (t LSPTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Path   string `json:"path"`
-		Line   int    `json:"line"`
-		Column int    `json:"column"`
-		Symbol string `json:"symbol"`
-		Root   string `json:"root"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[LSPInput]("LSP", input)
+	if err != nil {
 		return "", err
 	}
 

@@ -576,3 +576,92 @@ func TestImportOrganizerSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [path]", ImportOrganizerTool{}.Parameters()["required"])
 	}
 }
+
+func TestJobsSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = JobsTool{}
+	props := schemaProps(t, JobsTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 5 || enum[0] != "list" || enum[4] != "kill" {
+		t.Fatalf("action enum = %v, want 5 options", props["action"])
+	}
+	if props["command"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("command type wrong")
+	}
+	req, _ := JobsTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", JobsTool{}.Parameters()["required"])
+	}
+}
+
+func TestLSPToolSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = LSPTool{}
+	props := schemaProps(t, LSPTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+	req, _ := LSPTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "action" || req[1] != "path" {
+		t.Fatalf("required = %v, want [action path]", LSPTool{}.Parameters()["required"])
+	}
+}
+
+func TestToolSearchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ToolSearchTool{}
+	props := schemaProps(t, ToolSearchTool{}.Parameters())
+	if props["query"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+	if props["max_results"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_results type wrong")
+	}
+	req, _ := ToolSearchTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "query" {
+		t.Fatalf("required = %v, want [query]", ToolSearchTool{}.Parameters()["required"])
+	}
+}
+
+func TestToolsetSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ToolsetTool{}
+	props := schemaProps(t, ToolsetTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "list" || enum[1] != "resolve" {
+		t.Fatalf("action enum = %v, want [list resolve]", props["action"])
+	}
+	req, _ := ToolsetTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", ToolsetTool{}.Parameters()["required"])
+	}
+}
+
+func TestWorktreeSchemasProvider(t *testing.T) {
+	var _ SchemaProvider = EnterWorktreeTool{}
+	var _ SchemaProvider = ExitWorktreeTool{}
+	props := schemaProps(t, EnterWorktreeTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("enter path type wrong")
+	}
+	req, _ := EnterWorktreeTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "path" {
+		t.Fatalf("enter required = %v, want [path]", EnterWorktreeTool{}.Parameters()["required"])
+	}
+	eprops := schemaProps(t, ExitWorktreeTool{}.Parameters())
+	if eprops["cleanup"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("exit cleanup type wrong")
+	}
+}
+
+func TestPowerShellSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = PowerShellTool{}
+	props := schemaProps(t, PowerShellTool{}.Parameters())
+	if props["command"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("command type wrong")
+	}
+	if props["timeout"].(map[string]interface{})["type"] != "number" {
+		t.Fatal("timeout type wrong")
+	}
+	req, _ := PowerShellTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "command" {
+		t.Fatalf("required = %v, want [command]", PowerShellTool{}.Parameters()["required"])
+	}
+}

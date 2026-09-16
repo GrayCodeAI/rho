@@ -15,6 +15,12 @@ import (
 // system.
 type ToolsetTool struct{}
 
+// ToolsetInput is the typed input for ToolsetTool.
+type ToolsetInput struct {
+	Action string `json:"action"`
+	Name   string `json:"name"`
+}
+
 func (ToolsetTool) Name() string      { return "Toolset" }
 func (ToolsetTool) RiskLevel() string { return "low" }
 func (ToolsetTool) Aliases() []string { return []string{"toolset"} }
@@ -22,31 +28,30 @@ func (ToolsetTool) Description() string {
 	return "List available toolsets or resolve one to its concrete tool list. Toolsets are named, composable groups (research, dev, ops, full_stack); resolving expands required toolsets transitively."
 }
 
-func (ToolsetTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"list", "resolve"},
-				"description": "list: show available toolsets; resolve: expand a toolset to its tools.",
-			},
-			"name": map[string]interface{}{
-				"type":        "string",
-				"description": "Toolset name to resolve (action=resolve).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ToolsetTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"list", "resolve"}, Description: "list: show available toolsets; resolve: expand a toolset to its tools."},
+			"name":   {Type: "string", Description: "Toolset name to resolve (action=resolve)."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (ToolsetTool) Parameters() map[string]interface{} {
+	return toolsetSchema.ToJSONSchema()
+}
+
+// toolsetSchema is the single source of truth for Toolset's input schema.
+var toolsetSchema = ToolsetTool{}.Schema()
+
 func (ToolsetTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Name   string `json:"name"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[ToolsetInput]("Toolset", input)
+	if err != nil {
+		return "", err
 	}
 	reg, err := toolset.NewRegistry(toolset.Defaults())
 	if err != nil {

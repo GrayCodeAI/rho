@@ -44,49 +44,34 @@ func (JobsTool) Description() string {
 		"session id: a session sees its own jobs plus every unowned job."
 }
 
-func (JobsTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []interface{}{"list", "run", "read", "wait", "kill"},
-				"description": "Operation to perform",
-			},
-			"command": map[string]interface{}{
-				"type":        "string",
-				"description": "Shell command to run in the background (required for run)",
-			},
-			"label": map[string]interface{}{
-				"type":        "string",
-				"description": "One-line model-facing label for the job (defaults to the command)",
-			},
-			"session": map[string]interface{}{
-				"type":        "string",
-				"description": "Owner session id. Jobs owned by a session are visible only to it; omitted jobs are unowned and visible to any caller",
-			},
-			"id": map[string]interface{}{
-				"type":        "string",
-				"description": "Job id, e.g. bash-3 (required for read/wait/kill)",
-			},
-			"reason": map[string]interface{}{
-				"type":        "string",
-				"description": "Kill reason forwarded verbatim to the job (default: 'user requested')",
-			},
-			"timeout_sec": map[string]interface{}{
-				"type":        "integer",
-				"description": "Max seconds to wait before returning the current snapshot (default: 60)",
-			},
-			"output_limit": map[string]interface{}{
-				"type":        "integer",
-				"description": "UTF-8 byte cap for stored output (default 100000)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (JobsTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":       {Type: "string", Enum: []interface{}{"list", "run", "read", "wait", "kill"}, Description: "Operation to perform"},
+			"command":      {Type: "string", Description: "Shell command to run in the background (required for run)"},
+			"label":        {Type: "string", Description: "One-line model-facing label for the job (defaults to the command)"},
+			"session":      {Type: "string", Description: "Owner session id. Jobs owned by a session are visible only to it; omitted jobs are unowned and visible to any caller"},
+			"id":           {Type: "string", Description: "Job id, e.g. bash-3 (required for read/wait/kill)"},
+			"reason":       {Type: "string", Description: "Kill reason forwarded verbatim to the job (default: 'user requested')"},
+			"timeout_sec":  {Type: "integer", Description: "Max seconds to wait before returning the current snapshot (default: 60)"},
+			"output_limit": {Type: "integer", Description: "UTF-8 byte cap for stored output (default 100000)"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
-type jobsInput struct {
+func (JobsTool) Parameters() map[string]interface{} {
+	return jobsSchema.ToJSONSchema()
+}
+
+// jobsSchema is the single source of truth for Jobs' input schema.
+var jobsSchema = JobsTool{}.Schema()
+
+// JobsInput is the typed input for JobsTool.
+type JobsInput struct {
 	Action      string `json:"action"`
 	Command     string `json:"command"`
 	Label       string `json:"label"`
@@ -112,8 +97,8 @@ type jobsSnapshotJSON struct {
 }
 
 func (JobsTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p jobsInput
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[JobsInput]("Jobs", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {
