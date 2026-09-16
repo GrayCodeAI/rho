@@ -630,6 +630,13 @@ type APICompatTool struct {
 	checker *CompatChecker
 }
 
+// APICompatInput is the typed input for APICompatTool.
+type APICompatInput struct {
+	PackagePath  string `json:"package_path"`
+	BaselinePath string `json:"baseline_path"`
+	SaveBaseline bool   `json:"save_baseline"`
+}
+
 // NewAPICompatTool creates a new APICompatTool.
 func NewAPICompatTool() *APICompatTool {
 	return &APICompatTool{
@@ -646,34 +653,30 @@ func (t *APICompatTool) Description() string {
 }
 
 func (t *APICompatTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"package_path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path to the Go package directory to analyze",
-			},
-			"baseline_path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path to the baseline snapshot JSON file",
-			},
-			"save_baseline": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, save current API as baseline instead of comparing",
-			},
+	return apiCompatSchema.ToJSONSchema()
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (t APICompatTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"package_path":  {Type: "string", Description: "Path to the Go package directory to analyze"},
+			"baseline_path": {Type: "string", Description: "Path to the baseline snapshot JSON file"},
+			"save_baseline": {Type: "boolean", Description: "If true, save current API as baseline instead of comparing"},
 		},
-		"required": []string{"package_path"},
+		Required: []string{"package_path"},
 	}
 }
 
+// apiCompatSchema is the single source of truth for APICompat's input schema.
+var apiCompatSchema = APICompatTool{}.Schema()
+
 func (t *APICompatTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		PackagePath  string `json:"package_path"`
-		BaselinePath string `json:"baseline_path"`
-		SaveBaseline bool   `json:"save_baseline"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("parsing parameters: %w", err)
+	params, err := DecodeInput[APICompatInput]("APICompat", input)
+	if err != nil {
+		return "", err
 	}
 
 	if params.PackagePath == "" {

@@ -882,6 +882,13 @@ type AutoImportTool struct {
 	importer *AutoImporter
 }
 
+// AutoImportInput is the typed input for AutoImportTool.
+type AutoImportInput struct {
+	Code  string `json:"code"`
+	File  string `json:"file"`
+	Apply bool   `json:"apply"`
+}
+
 // NewAutoImportTool creates an AutoImportTool with a pre-configured AutoImporter.
 func NewAutoImportTool() *AutoImportTool {
 	return &AutoImportTool{
@@ -894,35 +901,31 @@ func (AutoImportTool) Description() string {
 	return "Automatically detect and add missing imports in Go source code. Analyzes package-qualified symbol references and adds the corresponding import statements."
 }
 
-func (AutoImportTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"code": map[string]interface{}{
-				"type":        "string",
-				"description": "Go source code to analyze for missing imports",
-			},
-			"file": map[string]interface{}{
-				"type":        "string",
-				"description": "Optional file path for context (used in fix reporting)",
-			},
-			"apply": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, return the code with fixes applied; if false, only report missing imports",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (AutoImportTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"code":  {Type: "string", Description: "Go source code to analyze for missing imports"},
+			"file":  {Type: "string", Description: "Optional file path for context (used in fix reporting)"},
+			"apply": {Type: "boolean", Description: "If true, return the code with fixes applied; if false, only report missing imports"},
 		},
-		"required": []string{"code"},
+		Required: []string{"code"},
 	}
 }
 
+func (AutoImportTool) Parameters() map[string]interface{} {
+	return autoImportSchema.ToJSONSchema()
+}
+
+// autoImportSchema is the single source of truth for AutoImport's input schema.
+var autoImportSchema = AutoImportTool{}.Schema()
+
 func (t AutoImportTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Code  string `json:"code"`
-		File  string `json:"file"`
-		Apply bool   `json:"apply"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[AutoImportInput]("AutoImport", input)
+	if err != nil {
+		return "", err
 	}
 	if p.Code == "" {
 		return "", fmt.Errorf("code is required")

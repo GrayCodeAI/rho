@@ -19,6 +19,13 @@ import (
 // by covering the part that actually proves the app runs.
 type AppVerifyTool struct{}
 
+// AppVerifyInput is the typed input for AppVerifyTool.
+type AppVerifyInput struct {
+	Action           string `json:"action"`
+	Path             string `json:"path"`
+	ReadinessSeconds int    `json:"readiness_seconds"`
+}
+
 func (AppVerifyTool) Name() string      { return "AppVerify" }
 func (AppVerifyTool) RiskLevel() string { return "medium" }
 func (AppVerifyTool) Aliases() []string { return []string{"app-verify", "verify_app"} }
@@ -26,29 +33,26 @@ func (AppVerifyTool) Description() string {
 	return "Detect how this project boots and prove it runs: infer an install/build/test/start recipe, persist it to .rho/verify/environment.json as the verification contract, and run a bounded boot smoke check with readiness polling. Use action=detect to inspect, action=manifest to write/update the contract, action=smoke to boot the app and verify readiness."
 }
 
-func (AppVerifyTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"detect", "manifest", "smoke"},
-				"description": "detect infers the recipe; manifest loads-or-detects and persists .rho/verify/environment.json; smoke boots the app using the recipe's start command and polls readiness.",
-			},
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Project directory (default: session working directory).",
-			},
-			"readiness_seconds": map[string]interface{}{
-				"type":        "integer",
-				"minimum":     1,
-				"maximum":     300,
-				"description": "Max seconds to wait for the app to become ready during smoke (default 60).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (AppVerifyTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":            {Type: "string", Enum: []interface{}{"detect", "manifest", "smoke"}, Description: "detect infers the recipe; manifest loads-or-detects and persists .rho/verify/environment.json; smoke boots the app using the recipe's start command and polls readiness."},
+			"path":              {Type: "string", Description: "Project directory (default: session working directory)."},
+			"readiness_seconds": {Type: "integer", Minimum: 1, Maximum: 300, Description: "Max seconds to wait for the app to become ready during smoke (default 60)."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
+
+func (AppVerifyTool) Parameters() map[string]interface{} {
+	return appVerifySchema.ToJSONSchema()
+}
+
+// appVerifySchema is the single source of truth for AppVerify's input schema.
+var appVerifySchema = AppVerifyTool{}.Schema()
 
 type smokeResult struct {
 	Status    string `json:"status"` // passed | failed | skipped
@@ -60,13 +64,9 @@ type smokeResult struct {
 }
 
 func (AppVerifyTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Action           string `json:"action"`
-		Path             string `json:"path"`
-		ReadinessSeconds int    `json:"readiness_seconds"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[AppVerifyInput]("AppVerify", input)
+	if err != nil {
+		return "", err
 	}
 	switch params.Action {
 	case "detect", "manifest", "smoke":
