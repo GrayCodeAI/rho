@@ -53,6 +53,13 @@ const mcpAuthCallbackTimeout = 5 * time.Minute
 // same server_name later to check progress.
 type McpAuthTool struct{}
 
+// McpAuthInput is the typed input for McpAuthTool.
+type McpAuthInput struct {
+	ServerName string `json:"server_name"`
+	ServerURL  string `json:"server_url"`
+	ClientID   string `json:"client_id"`
+}
+
 func (McpAuthTool) Name() string      { return "McpAuth" }
 func (McpAuthTool) Aliases() []string { return []string{"mcp_auth"} }
 func (McpAuthTool) Description() string {
@@ -60,35 +67,30 @@ func (McpAuthTool) Description() string {
 		"Call again with the same server_name to check progress once the user has visited the URL."
 }
 
-func (McpAuthTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"server_name": map[string]interface{}{
-				"type":        "string",
-				"description": "Name of the MCP server to authenticate",
-			},
-			"server_url": map[string]interface{}{
-				"type":        "string",
-				"description": "URL of the MCP server",
-			},
-			"client_id": map[string]interface{}{
-				"type": "string",
-				"description": "Optional pre-registered OAuth client_id. If omitted, rho attempts " +
-					"dynamic client registration (RFC 7591) against the server's advertised registration endpoint.",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (McpAuthTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"server_name": {Type: "string", Description: "Name of the MCP server to authenticate"},
+			"server_url":  {Type: "string", Description: "URL of the MCP server"},
+			"client_id":   {Type: "string", Description: "Optional pre-registered OAuth client_id. If omitted, rho attempts dynamic client registration (RFC 7591) against the server's advertised registration endpoint."},
 		},
-		"required": []string{"server_name", "server_url"},
+		Required: []string{"server_name", "server_url"},
 	}
 }
 
+func (McpAuthTool) Parameters() map[string]interface{} {
+	return mcpAuthSchema.ToJSONSchema()
+}
+
+// mcpAuthSchema is the single source of truth for McpAuth's input schema.
+var mcpAuthSchema = McpAuthTool{}.Schema()
+
 func (McpAuthTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ServerName string `json:"server_name"`
-		ServerURL  string `json:"server_url"`
-		ClientID   string `json:"client_id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[McpAuthInput]("McpAuth", input)
+	if err != nil {
 		return "", err
 	}
 	if p.ServerName == "" {

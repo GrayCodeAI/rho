@@ -10,6 +10,11 @@ import (
 
 type ListMcpResourcesTool struct{}
 
+// ListMcpResourcesInput is the typed input for ListMcpResourcesTool.
+type ListMcpResourcesInput struct {
+	Server string `json:"server"`
+}
+
 func (ListMcpResourcesTool) Name() string { return "ListMcpResourcesTool" }
 func (ListMcpResourcesTool) Aliases() []string {
 	return []string{"list_mcp_resources", "listMcpResources"}
@@ -19,23 +24,32 @@ func (ListMcpResourcesTool) Description() string {
 	return "List resources exposed by connected MCP servers. Optionally filter by server name."
 }
 
-func (ListMcpResourcesTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"server": map[string]interface{}{"type": "string", "description": "Optional MCP server name to filter resources by"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ListMcpResourcesTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"server": {Type: "string", Description: "Optional MCP server name to filter resources by"},
 		},
 	}
 }
 
+func (ListMcpResourcesTool) Parameters() map[string]interface{} {
+	return listMcpResourcesSchema.ToJSONSchema()
+}
+
+// listMcpResourcesSchema is the single source of truth for ListMcpResources's input schema.
+var listMcpResourcesSchema = ListMcpResourcesTool{}.Schema()
+
 func (ListMcpResourcesTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Server string `json:"server"`
-	}
-	if len(input) > 0 {
-		if err := json.Unmarshal(input, &p); err != nil {
+	var p ListMcpResourcesInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[ListMcpResourcesInput]("ListMcpResources", input)
+		if err != nil {
 			return "", err
 		}
+		p = decoded
 	}
 
 	type resourceOut struct {
@@ -79,6 +93,12 @@ func (ListMcpResourcesTool) Execute(_ context.Context, input json.RawMessage) (s
 
 type ReadMcpResourceTool struct{}
 
+// ReadMcpResourceInput is the typed input for ReadMcpResourceTool.
+type ReadMcpResourceInput struct {
+	Server string `json:"server"`
+	URI    string `json:"uri"`
+}
+
 func (ReadMcpResourceTool) Name() string { return "ReadMcpResourceTool" }
 func (ReadMcpResourceTool) Aliases() []string {
 	return []string{"read_mcp_resource", "readMcpResource"}
@@ -88,23 +108,29 @@ func (ReadMcpResourceTool) Description() string {
 	return "Read a resource exposed by a connected MCP server."
 }
 
-func (ReadMcpResourceTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"server": map[string]interface{}{"type": "string", "description": "MCP server name"},
-			"uri":    map[string]interface{}{"type": "string", "description": "Resource URI"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ReadMcpResourceTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"server": {Type: "string", Description: "MCP server name"},
+			"uri":    {Type: "string", Description: "Resource URI"},
 		},
-		"required": []string{"server", "uri"},
+		Required: []string{"server", "uri"},
 	}
 }
 
+func (ReadMcpResourceTool) Parameters() map[string]interface{} {
+	return readMcpResourceSchema.ToJSONSchema()
+}
+
+// readMcpResourceSchema is the single source of truth for ReadMcpResource's input schema.
+var readMcpResourceSchema = ReadMcpResourceTool{}.Schema()
+
 func (ReadMcpResourceTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Server string `json:"server"`
-		URI    string `json:"uri"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[ReadMcpResourceInput]("ReadMcpResource", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Server == "" || p.URI == "" {

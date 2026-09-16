@@ -13,61 +13,51 @@ import (
 // across multiple languages without running a language server directly.
 type MCPLanguageServerTool struct{}
 
+// MCPLanguageServerInput is the typed input for MCPLanguageServerTool.
+type MCPLanguageServerInput struct {
+	Action   string `json:"action"`
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Column   int    `json:"column"`
+	Symbol   string `json:"symbol"`
+	NewName  string `json:"newName"`
+	Language string `json:"language"`
+}
+
 func (MCPLanguageServerTool) Name() string      { return "MCPLSP" }
 func (MCPLanguageServerTool) Aliases() []string { return []string{"mcplsp", "lsp-mcp"} }
 func (MCPLanguageServerTool) Description() string {
 	return "Deep code understanding via MCP language server. Provides go-to-definition, find-references, rename, and diagnostics across multiple languages."
 }
 
-func (MCPLanguageServerTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"definition", "references", "rename", "diagnostics", "hover", "symbols"},
-				"description": "LSP action to perform",
-			},
-			"file": map[string]interface{}{
-				"type":        "string",
-				"description": "File path",
-			},
-			"line": map[string]interface{}{
-				"type":        "integer",
-				"description": "Line number (1-based)",
-			},
-			"column": map[string]interface{}{
-				"type":        "integer",
-				"description": "Column number (1-based)",
-			},
-			"symbol": map[string]interface{}{
-				"type":        "string",
-				"description": "Symbol name (for rename: old name)",
-			},
-			"newName": map[string]interface{}{
-				"type":        "string",
-				"description": "New name for rename action",
-			},
-			"language": map[string]interface{}{
-				"type":        "string",
-				"description": "Language server to use (go, python, typescript, rust)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (MCPLanguageServerTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":   {Type: "string", Enum: []interface{}{"definition", "references", "rename", "diagnostics", "hover", "symbols"}, Description: "LSP action to perform"},
+			"file":     {Type: "string", Description: "File path"},
+			"line":     {Type: "integer", Description: "Line number (1-based)"},
+			"column":   {Type: "integer", Description: "Column number (1-based)"},
+			"symbol":   {Type: "string", Description: "Symbol name (for rename: old name)"},
+			"newName":  {Type: "string", Description: "New name for rename action"},
+			"language": {Type: "string", Description: "Language server to use (go, python, typescript, rust)"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (MCPLanguageServerTool) Parameters() map[string]interface{} {
+	return mcpLSPLanguageSchema.ToJSONSchema()
+}
+
+// mcpLSPLanguageSchema is the single source of truth for MCPLanguageServer's input schema.
+var mcpLSPLanguageSchema = MCPLanguageServerTool{}.Schema()
+
 func (MCPLanguageServerTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action   string `json:"action"`
-		File     string `json:"file"`
-		Line     int    `json:"line"`
-		Column   int    `json:"column"`
-		Symbol   string `json:"symbol"`
-		NewName  string `json:"newName"`
-		Language string `json:"language"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[MCPLanguageServerInput]("MCPLanguageServer", input)
+	if err != nil {
 		return "", err
 	}
 

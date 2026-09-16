@@ -39,28 +39,36 @@ func (AgenticFetchTool) Description() string {
 	return "Fetch and intelligently summarize web content using a sub-agent. Better than raw WebFetch for research — the sub-agent extracts only the relevant information."
 }
 
-func (AgenticFetchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"url": map[string]interface{}{"type": "string", "description": "URL to fetch and analyze. Provide this OR urls (not both)."},
-			"urls": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Multiple URLs to fetch and summarize concurrently against the same query, in a single call.",
-			},
-			"query": map[string]interface{}{"type": "string", "description": "What to look for or extract from the page(s)"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (AgenticFetchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"url":   {Type: "string", Description: "URL to fetch and analyze. Provide this OR urls (not both)."},
+			"urls":  {Type: "array", Items: &SchemaProperty{Type: "string"}, Description: "Multiple URLs to fetch and summarize concurrently against the same query, in a single call."},
+			"query": {Type: "string", Description: "What to look for or extract from the page(s)"},
 		},
 	}
 }
 
+func (AgenticFetchTool) Parameters() map[string]interface{} {
+	return agenticFetchSchema.ToJSONSchema()
+}
+
+// agenticFetchSchema is the single source of truth for AgenticFetch's input schema.
+var agenticFetchSchema = AgenticFetchTool{}.Schema()
+
+// AgenticFetchInput is the typed input for AgenticFetchTool.
+type AgenticFetchInput struct {
+	URL   string   `json:"url"`
+	URLs  []string `json:"urls"`
+	Query string   `json:"query"`
+}
+
 func (t AgenticFetchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		URL   string   `json:"url"`
-		URLs  []string `json:"urls"`
-		Query string   `json:"query"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[AgenticFetchInput]("AgenticFetch", input)
+	if err != nil {
 		return "", err
 	}
 
