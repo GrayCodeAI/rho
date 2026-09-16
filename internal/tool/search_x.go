@@ -19,6 +19,12 @@ import (
 // boundary-compliant (no flux/client import), httptest-testable.
 type SearchXTool struct{}
 
+// SearchXInput is the typed input for SearchXTool.
+type SearchXInput struct {
+	Query string `json:"query"`
+	Model string `json:"model"`
+}
+
 func (SearchXTool) Name() string      { return "SearchX" }
 func (SearchXTool) RiskLevel() string { return "medium" }
 func (SearchXTool) Aliases() []string { return []string{"search_x", "x_search", "xsearch"} }
@@ -26,22 +32,25 @@ func (SearchXTool) Description() string {
 	return "Search X/Twitter for live posts matching a query. Returns a summarized answer incorporating current X results. Requires XAI_API_KEY."
 }
 
-func (SearchXTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "The X/Twitter search query (topic, hashtag, account, etc.).",
-			},
-			"model": map[string]interface{}{
-				"type":        "string",
-				"description": "Model to use (default grok-4.20-non-reasoning).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SearchXTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"query": {Type: "string", Description: "The X/Twitter search query (topic, hashtag, account, etc.)."},
+			"model": {Type: "string", Description: "Model to use (default grok-4.20-non-reasoning)."},
 		},
-		"required": []string{"query"},
+		Required: []string{"query"},
 	}
 }
+
+func (SearchXTool) Parameters() map[string]interface{} {
+	return searchXSchema.ToJSONSchema()
+}
+
+// searchXSchema is the single source of truth for SearchX's input schema.
+var searchXSchema = SearchXTool{}.Schema()
 
 // xAISearchSystemPrompt directs the model to use its built-in X search and
 // return a concise, cited summary.
@@ -62,12 +71,9 @@ func xAISearchKey() string {
 func xAISearchModel() string { return "grok-4.20-non-reasoning" }
 
 func (SearchXTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Query string `json:"query"`
-		Model string `json:"model"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[SearchXInput]("SearchX", input)
+	if err != nil {
+		return "", err
 	}
 	query := strings.TrimSpace(p.Query)
 	if query == "" {

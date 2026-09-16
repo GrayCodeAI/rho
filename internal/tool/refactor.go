@@ -772,95 +772,61 @@ func NewRefactorTool() *RefactorTool {
 }
 
 func (RefactorTool) Name() string { return "Refactor" }
+
+// RefactorInput is the typed input for RefactorTool.
+type RefactorInput struct {
+	Action    string `json:"action"`
+	File      string `json:"file"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	NewName   string `json:"new_name"`
+	OldName   string `json:"old_name"`
+	Line      int    `json:"line"`
+	Expr      string `json:"expr"`
+	VarName   string `json:"var_name"`
+	Context   string `json:"context"`
+	TestFunc  string `json:"test_func"`
+	FuncName  string `json:"func_name"`
+}
+
 func (RefactorTool) Description() string {
 	return "Apply common refactoring patterns (extract function, rename symbol, inline variable, extract variable, add error check, wrap with context, convert to table test, sort imports, remove unused params) without LLM calls."
 }
 
-func (RefactorTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Refactoring action: extract_function, rename_symbol, inline_variable, extract_variable, add_error_check, wrap_with_context, convert_table_test, sort_imports, remove_unused_params",
-				"enum": []string{
-					"extract_function",
-					"rename_symbol",
-					"inline_variable",
-					"extract_variable",
-					"add_error_check",
-					"wrap_with_context",
-					"convert_table_test",
-					"sort_imports",
-					"remove_unused_params",
-				},
-			},
-			"file": map[string]interface{}{
-				"type":        "string",
-				"description": "Absolute path to the file to refactor",
-			},
-			"start_line": map[string]interface{}{
-				"type":        "integer",
-				"description": "Start line (1-based) for extract_function",
-			},
-			"end_line": map[string]interface{}{
-				"type":        "integer",
-				"description": "End line (1-based) for extract_function",
-			},
-			"new_name": map[string]interface{}{
-				"type":        "string",
-				"description": "New name for extract_function or rename_symbol",
-			},
-			"old_name": map[string]interface{}{
-				"type":        "string",
-				"description": "Old symbol name for rename_symbol",
-			},
-			"line": map[string]interface{}{
-				"type":        "integer",
-				"description": "Line number for inline_variable, extract_variable, add_error_check, or wrap_with_context",
-			},
-			"expr": map[string]interface{}{
-				"type":        "string",
-				"description": "Expression to extract for extract_variable",
-			},
-			"var_name": map[string]interface{}{
-				"type":        "string",
-				"description": "Variable name for extract_variable",
-			},
-			"context": map[string]interface{}{
-				"type":        "string",
-				"description": "Context message for wrap_with_context",
-			},
-			"test_func": map[string]interface{}{
-				"type":        "string",
-				"description": "Test function name for convert_table_test",
-			},
-			"func_name": map[string]interface{}{
-				"type":        "string",
-				"description": "Function name for remove_unused_params",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (RefactorTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":     {Type: "string", Enum: []interface{}{"extract_function", "rename_symbol", "inline_variable", "extract_variable", "add_error_check", "wrap_with_context", "convert_table_test", "sort_imports", "remove_unused_params"}, Description: "Refactoring action: extract_function, rename_symbol, inline_variable, extract_variable, add_error_check, wrap_with_context, convert_table_test, sort_imports, remove_unused_params"},
+			"file":       {Type: "string", Description: "Absolute path to the file to refactor"},
+			"start_line": {Type: "integer", Description: "Start line (1-based) for extract_function"},
+			"end_line":   {Type: "integer", Description: "End line (1-based) for extract_function"},
+			"new_name":   {Type: "string", Description: "New name for extract_function or rename_symbol"},
+			"old_name":   {Type: "string", Description: "Old symbol name for rename_symbol"},
+			"line":       {Type: "integer", Description: "Line number for inline_variable, extract_variable, add_error_check, or wrap_with_context"},
+			"expr":       {Type: "string", Description: "Expression to extract for extract_variable"},
+			"var_name":   {Type: "string", Description: "Variable name for extract_variable"},
+			"context":    {Type: "string", Description: "Context message for wrap_with_context"},
+			"test_func":  {Type: "string", Description: "Test function name for convert_table_test"},
+			"func_name":  {Type: "string", Description: "Function name for remove_unused_params"},
 		},
-		"required": []string{"action", "file"},
+		Required: []string{"action", "file"},
 	}
 }
 
+func (RefactorTool) Parameters() map[string]interface{} {
+	return refactorSchema.ToJSONSchema()
+}
+
+// refactorSchema is the single source of truth for Refactor's input schema.
+var refactorSchema = RefactorTool{}.Schema()
+
 func (rt RefactorTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action    string `json:"action"`
-		File      string `json:"file"`
-		StartLine int    `json:"start_line"`
-		EndLine   int    `json:"end_line"`
-		NewName   string `json:"new_name"`
-		OldName   string `json:"old_name"`
-		Line      int    `json:"line"`
-		Expr      string `json:"expr"`
-		VarName   string `json:"var_name"`
-		Context   string `json:"context"`
-		TestFunc  string `json:"test_func"`
-		FuncName  string `json:"func_name"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[RefactorInput]("Refactor", input)
+	if err != nil {
+		return "", err
 	}
 	if p.Action == "" {
 		return "", fmt.Errorf("action is required")
@@ -874,7 +840,6 @@ func (rt RefactorTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	ref := rt.refactorer
 	var result *RefactoringResult
-	var err error
 
 	switch p.Action {
 	case "extract_function":

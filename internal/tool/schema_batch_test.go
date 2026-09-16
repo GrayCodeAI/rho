@@ -889,3 +889,108 @@ func TestAgenticFetchSchemaProvider(t *testing.T) {
 		t.Fatal("query type wrong")
 	}
 }
+
+func TestProjectVerifySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ProjectVerifyTool{}
+	props := schemaProps(t, ProjectVerifyTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 6 || enum[0] != "detect" || enum[5] != "all" {
+		t.Fatalf("action enum = %v, want 6 options", props["action"])
+	}
+	ts := props["timeout_seconds"].(map[string]interface{})
+	if ts["minimum"] != 1 || ts["maximum"] != 600 {
+		t.Fatalf("timeout_seconds bounds = %v, want min 1 max 600", ts)
+	}
+	req, _ := ProjectVerifyTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", ProjectVerifyTool{}.Parameters()["required"])
+	}
+}
+
+func TestSearchXSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SearchXTool{}
+	props := schemaProps(t, SearchXTool{}.Parameters())
+	if props["query"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+	if props["model"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("model type wrong")
+	}
+	req, _ := SearchXTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "query" {
+		t.Fatalf("required = %v, want [query]", SearchXTool{}.Parameters()["required"])
+	}
+}
+
+func TestSessionQuerySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SessionQueryTool{}
+	props := schemaProps(t, SessionQueryTool{}.Parameters())
+	if props["query"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+	if props["limit"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("limit type wrong")
+	}
+	req, _ := SessionQueryTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "query" {
+		t.Fatalf("required = %v, want [query]", SessionQueryTool{}.Parameters()["required"])
+	}
+}
+
+func TestScheduleSchemasProvider(t *testing.T) {
+	var _ SchemaProvider = ScheduleCreateTool{}
+	var _ SchemaProvider = ScheduleListTool{}
+	var _ SchemaProvider = ScheduleDeleteTool{}
+	cprops := schemaProps(t, ScheduleCreateTool{}.Parameters())
+	if cprops["prompt"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("prompt type wrong")
+	}
+	if cprops["recurring"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("recurring type wrong")
+	}
+	creq, _ := ScheduleCreateTool{}.Parameters()["required"].([]string)
+	if len(creq) != 1 || creq[0] != "prompt" {
+		t.Fatalf("create required = %v, want [prompt]", ScheduleCreateTool{}.Parameters()["required"])
+	}
+	lprops := schemaProps(t, ScheduleListTool{}.Parameters())
+	if len(lprops) != 0 {
+		t.Fatalf("list properties = %v, want empty", lprops)
+	}
+	dprops := schemaProps(t, ScheduleDeleteTool{}.Parameters())
+	if dprops["id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("delete id type wrong")
+	}
+	dreq, _ := ScheduleDeleteTool{}.Parameters()["required"].([]string)
+	if len(dreq) != 1 || dreq[0] != "id" {
+		t.Fatalf("delete required = %v, want [id]", ScheduleDeleteTool{}.Parameters()["required"])
+	}
+}
+
+func TestSmartReaderSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SmartReaderTool{}
+	props := schemaProps(t, SmartReaderTool{}.Parameters())
+	enum, ok := props["strategy"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "full" || enum[3] != "relevant" {
+		t.Fatalf("strategy enum = %v, want 4 options", props["strategy"])
+	}
+	req, _ := SmartReaderTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "path" {
+		t.Fatalf("required = %v, want [path]", SmartReaderTool{}.Parameters()["required"])
+	}
+}
+
+func TestRefactorSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = RefactorTool{}
+	props := schemaProps(t, RefactorTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 9 || enum[0] != "extract_function" || enum[8] != "remove_unused_params" {
+		t.Fatalf("action enum = %v, want 9 options", props["action"])
+	}
+	if props["file"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("file type wrong")
+	}
+	req, _ := RefactorTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "action" || req[1] != "file" {
+		t.Fatalf("required = %v, want [action file]", RefactorTool{}.Parameters()["required"])
+	}
+}
