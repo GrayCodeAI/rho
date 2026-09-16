@@ -42,32 +42,36 @@ func (RequestCredentialTool) Description() string {
 		"available inside the sandbox. Use this when a command fails due to missing credentials."
 }
 
-func (RequestCredentialTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"credential": map[string]interface{}{
-				"type":        "string",
-				"description": "Credential ID to request. One of: gitconfig, kube, aws, gh, docker, gnupg, terraform.",
-			},
-			"reason": map[string]interface{}{
-				"type":        "string",
-				"description": "Why this credential is needed (e.g. 'run kubectl get pods').",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (RequestCredentialTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"credential": {Type: "string", Description: "Credential ID to request. One of: gitconfig, kube, aws, gh, docker, gnupg, terraform."},
+			"reason":     {Type: "string", Description: "Why this credential is needed (e.g. 'run kubectl get pods')."},
 		},
-		"required": []string{"credential", "reason"},
+		Required: []string{"credential", "reason"},
 	}
 }
 
-type credentialInput struct {
+func (RequestCredentialTool) Parameters() map[string]interface{} {
+	return requestCredentialSchema.ToJSONSchema()
+}
+
+// requestCredentialSchema is the single source of truth for RequestCredential's input schema.
+var requestCredentialSchema = RequestCredentialTool{}.Schema()
+
+// RequestCredentialInput is the typed input for RequestCredentialTool.
+type RequestCredentialInput struct {
 	Credential string `json:"credential"`
 	Reason     string `json:"reason"`
 }
 
 func (t RequestCredentialTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p credentialInput
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid RequestCredential input: %w", err)
+	p, err := DecodeInput[RequestCredentialInput]("RequestCredential", input)
+	if err != nil {
+		return "", err
 	}
 	if p.Credential == "" {
 		return "", fmt.Errorf("credential is required")

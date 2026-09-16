@@ -42,73 +42,73 @@ func TestDebuggerTool_Metadata(t *testing.T) {
 func TestDebuggerTool_ValidateParams(t *testing.T) {
 	tests := []struct {
 		name    string
-		params  debugParams
+		params  DebuggerInput
 		wantErr bool
 		errMsg  string
 	}{
 		{
 			name:    "empty action",
-			params:  debugParams{},
+			params:  DebuggerInput{},
 			wantErr: true,
 			errMsg:  "action is required",
 		},
 		{
 			name:    "breakpoint without file",
-			params:  debugParams{Action: "breakpoint", Line: 10},
+			params:  DebuggerInput{Action: "breakpoint", Line: 10},
 			wantErr: true,
 			errMsg:  "file is required",
 		},
 		{
 			name:    "breakpoint without line",
-			params:  debugParams{Action: "breakpoint", File: "main.go"},
+			params:  DebuggerInput{Action: "breakpoint", File: "main.go"},
 			wantErr: true,
 			errMsg:  "line must be a positive integer",
 		},
 		{
 			name:    "breakpoint with negative line",
-			params:  debugParams{Action: "breakpoint", File: "main.go", Line: -1},
+			params:  DebuggerInput{Action: "breakpoint", File: "main.go", Line: -1},
 			wantErr: true,
 			errMsg:  "line must be a positive integer",
 		},
 		{
 			name:    "inspect without expression",
-			params:  debugParams{Action: "inspect"},
+			params:  DebuggerInput{Action: "inspect"},
 			wantErr: true,
 			errMsg:  "expression is required",
 		},
 		{
 			name:    "valid breakpoint",
-			params:  debugParams{Action: "breakpoint", File: "main.go", Line: 10},
+			params:  DebuggerInput{Action: "breakpoint", File: "main.go", Line: 10},
 			wantErr: false,
 		},
 		{
 			name:    "valid inspect",
-			params:  debugParams{Action: "inspect", Expression: "x + 1"},
+			params:  DebuggerInput{Action: "inspect", Expression: "x + 1"},
 			wantErr: false,
 		},
 		{
 			name:    "valid run",
-			params:  debugParams{Action: "run"},
+			params:  DebuggerInput{Action: "run"},
 			wantErr: false,
 		},
 		{
 			name:    "valid step",
-			params:  debugParams{Action: "step"},
+			params:  DebuggerInput{Action: "step"},
 			wantErr: false,
 		},
 		{
 			name:    "valid continue",
-			params:  debugParams{Action: "continue"},
+			params:  DebuggerInput{Action: "continue"},
 			wantErr: false,
 		},
 		{
 			name:    "valid stack",
-			params:  debugParams{Action: "stack"},
+			params:  DebuggerInput{Action: "stack"},
 			wantErr: false,
 		},
 		{
 			name:    "unknown action",
-			params:  debugParams{Action: "dance"},
+			params:  DebuggerInput{Action: "dance"},
 			wantErr: true,
 			errMsg:  "unknown action",
 		},

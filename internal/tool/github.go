@@ -23,31 +23,40 @@ func (GitHubTool) Description() string {
 	return "Inspect GitHub repositories, pull requests, issues, checks, and workflow runs through the authenticated gh CLI. Read-only; creating, merging, commenting, and pushing require explicit Git/Bash workflows."
 }
 
-func (GitHubTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type": "string",
-				"enum": []string{"auth_status", "repo", "pr_list", "pr_view", "pr_diff", "pr_checks", "issue_list", "issue_view", "run_list"},
-			},
-			"ref":   map[string]interface{}{"type": "string", "description": "PR, issue, or workflow reference (number, URL, or branch where supported)."},
-			"limit": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum records for list actions (default 20)."},
-			"path":  map[string]interface{}{"type": "string", "description": "Repository working directory (default: session working directory)."},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (GitHubTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"auth_status", "repo", "pr_list", "pr_view", "pr_diff", "pr_checks", "issue_list", "issue_view", "run_list"}},
+			"ref":    {Type: "string", Description: "PR, issue, or workflow reference (number, URL, or branch where supported)."},
+			"limit":  {Type: "integer", Minimum: 1, Maximum: 50, Description: "Maximum records for list actions (default 20)."},
+			"path":   {Type: "string", Description: "Repository working directory (default: session working directory)."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (GitHubTool) Parameters() map[string]interface{} {
+	return gitHubSchema.ToJSONSchema()
+}
+
+// gitHubSchema is the single source of truth for GitHub's input schema.
+var gitHubSchema = GitHubTool{}.Schema()
+
+// GitHubInput is the typed input for GitHubTool.
+type GitHubInput struct {
+	Action string `json:"action"`
+	Ref    string `json:"ref"`
+	Limit  int    `json:"limit"`
+	Path   string `json:"path"`
+}
+
 func (GitHubTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Action string `json:"action"`
-		Ref    string `json:"ref"`
-		Limit  int    `json:"limit"`
-		Path   string `json:"path"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[GitHubInput]("GitHub", input)
+	if err != nil {
+		return "", err
 	}
 	params.Action = strings.ToLower(strings.TrimSpace(params.Action))
 	if params.Limit <= 0 {
@@ -68,7 +77,7 @@ func (GitHubTool) Execute(ctx context.Context, input json.RawMessage) (string, e
 			root, _ = os.Getwd()
 		}
 	}
-	root, err := filepath.Abs(root)
+	root, err = filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve repository path: %w", err)
 	}

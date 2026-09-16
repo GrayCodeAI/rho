@@ -44,30 +44,35 @@ func (GitTool) Description() string {
 	return "Run git commands in the project worktree. Supports: status, diff, log, show, branch, checkout, add, commit, pull, push, fetch, stash, rebase, merge, reset, tag."
 }
 
-func (GitTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"subcommand": map[string]interface{}{
-				"type":        "string",
-				"description": "Git subcommand to run (e.g. status, diff, add, commit)",
-			},
-			"args": map[string]interface{}{
-				"type":        "array",
-				"items":       map[string]interface{}{"type": "string"},
-				"description": "Arguments for the subcommand (e.g. [\"-m\", \"fix bug\"])",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (GitTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"subcommand": {Type: "string", Description: "Git subcommand to run (e.g. status, diff, add, commit)"},
+			"args":       {Type: "array", Items: &SchemaProperty{Type: "string"}, Description: "Arguments for the subcommand (e.g. [\"-m\", \"fix bug\"])"},
 		},
-		"required": []string{"subcommand"},
+		Required: []string{"subcommand"},
 	}
 }
 
+func (GitTool) Parameters() map[string]interface{} {
+	return gitSchema.ToJSONSchema()
+}
+
+// gitSchema is the single source of truth for Git's input schema.
+var gitSchema = GitTool{}.Schema()
+
+// GitInput is the typed input for GitTool.
+type GitInput struct {
+	Subcommand string   `json:"subcommand"`
+	Args       []string `json:"args,omitempty"`
+}
+
 func (t GitTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var in struct {
-		Subcommand string   `json:"subcommand"`
-		Args       []string `json:"args,omitempty"`
-	}
-	if err := json.Unmarshal(input, &in); err != nil {
+	in, err := DecodeInput[GitInput]("Git", input)
+	if err != nil {
 		return "", err
 	}
 

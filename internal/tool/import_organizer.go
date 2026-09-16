@@ -783,25 +783,34 @@ func (ImportOrganizerTool) Description() string {
 	return "Organize and fix imports in Go and TypeScript files. Groups imports by category, sorts alphabetically, and removes unused imports."
 }
 
-func (ImportOrganizerTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Absolute path to the file to organize imports in",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ImportOrganizerTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path": {Type: "string", Description: "Absolute path to the file to organize imports in"},
 		},
-		"required": []string{"path"},
+		Required: []string{"path"},
 	}
 }
 
+func (ImportOrganizerTool) Parameters() map[string]interface{} {
+	return importOrganizerSchema.ToJSONSchema()
+}
+
+// importOrganizerSchema is the single source of truth for ImportOrganizer's input schema.
+var importOrganizerSchema = ImportOrganizerTool{}.Schema()
+
+// ImportOrganizerInput is the typed input for ImportOrganizerTool.
+type ImportOrganizerInput struct {
+	Path string `json:"path"`
+}
+
 func (ImportOrganizerTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[ImportOrganizerInput]("ImportOrganizer", input)
+	if err != nil {
+		return "", err
 	}
 	if p.Path == "" {
 		return "", fmt.Errorf("path is required")
