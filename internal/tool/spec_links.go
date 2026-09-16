@@ -17,6 +17,12 @@ import (
 type SpecLinksTool struct{}
 
 func (SpecLinksTool) Name() string { return "SpecLinks" }
+
+// SpecLinksInput is the typed input for SpecLinksTool.
+type SpecLinksInput struct {
+	Action string `json:"action"`
+}
+
 func (SpecLinksTool) Aliases() []string {
 	return []string{"spec_links", "spec:links"}
 }
@@ -27,24 +33,27 @@ func (SpecLinksTool) Description() string {
 		"action=add writes [REQ-X.Y.Z] annotations into the spec's tasks.md checklist."
 }
 
-func (SpecLinksTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: check (verify coverage), add (write annotations into tasks.md)",
-				"enum":        []string{"check", "add"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecLinksTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"check", "add"}, Description: "Action: check (verify coverage), add (write annotations into tasks.md)"},
 		},
 	}
 }
 
+func (SpecLinksTool) Parameters() map[string]interface{} {
+	return specLinksSchema.ToJSONSchema()
+}
+
+// specLinksSchema is the single source of truth for SpecLinks's input schema.
+var specLinksSchema = SpecLinksTool{}.Schema()
+
 func (SpecLinksTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecLinksInput]("SpecLinks", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {

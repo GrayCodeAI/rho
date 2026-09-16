@@ -14,6 +14,13 @@ import (
 type SpecTraceTool struct{}
 
 func (SpecTraceTool) Name() string { return "SpecTrace" }
+
+// SpecTraceInput is the typed input for SpecTraceTool.
+type SpecTraceInput struct {
+	Action  string `json:"action"`
+	ScanDir string `json:"scan_dir"`
+}
+
 func (SpecTraceTool) Aliases() []string {
 	return []string{"spec_trace", "spec:trace"}
 }
@@ -22,22 +29,24 @@ func (SpecTraceTool) Description() string {
 	return "Requirements Traceability Matrix (RTM). Maps requirements to design decisions, implementation files, and tests. Supports forward (req->code), backward (test->req), and bidirectional traceability. Flags gaps and orphans."
 }
 
-func (SpecTraceTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: matrix (full RTM), forward (req->code), backward (test->req), gaps (only gaps)",
-				"enum":        []string{"matrix", "forward", "backward", "gaps"},
-			},
-			"scan_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory to scan (default: current directory)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecTraceTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":   {Type: "string", Enum: []interface{}{"matrix", "forward", "backward", "gaps"}, Description: "Action: matrix (full RTM), forward (req->code), backward (test->req), gaps (only gaps)"},
+			"scan_dir": {Type: "string", Description: "Directory to scan (default: current directory)"},
 		},
 	}
 }
+
+func (SpecTraceTool) Parameters() map[string]interface{} {
+	return specTraceSchema.ToJSONSchema()
+}
+
+// specTraceSchema is the single source of truth for SpecTrace's input schema.
+var specTraceSchema = SpecTraceTool{}.Schema()
 
 type TraceLink struct {
 	ReqID     string   `json:"req_id"`
@@ -56,11 +65,8 @@ type TraceMatrix struct {
 }
 
 func (SpecTraceTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action  string `json:"action"`
-		ScanDir string `json:"scan_dir"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecTraceInput]("SpecTrace", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {

@@ -16,6 +16,13 @@ import (
 type ChecklistTool struct{}
 
 func (ChecklistTool) Name() string { return "Checklist" }
+
+// ChecklistInput is the typed input for ChecklistTool.
+type ChecklistInput struct {
+	IncludeReferences bool   `json:"include_references"`
+	Artifact          string `json:"artifact"`
+}
+
 func (ChecklistTool) Aliases() []string {
 	return []string{"checklist", "spec_checklist", "spec:checklist"}
 }
@@ -24,30 +31,33 @@ func (ChecklistTool) Description() string {
 	return "Generate a QA checklist from the active spec's requirements and scenarios. Each requirement becomes a checkable item. Optionally include reference checklists for accessibility, security, performance, observability, and testing."
 }
 
-func (ChecklistTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"include_references": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, append reference checklists (accessibility, security, performance, observability, testing) alongside spec-derived checks",
-			},
-			"artifact": map[string]interface{}{
-				"type":        "string",
-				"description": "Which artifact to generate checklist from: spec.md (default) or tasks.md",
-				"enum":        []string{"spec.md", "tasks.md"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ChecklistTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"include_references": {Type: "boolean", Description: "If true, append reference checklists (accessibility, security, performance, observability, testing) alongside spec-derived checks"},
+			"artifact":           {Type: "string", Enum: []interface{}{"spec.md", "tasks.md"}, Description: "Which artifact to generate checklist from: spec.md (default) or tasks.md"},
 		},
 	}
 }
 
+func (ChecklistTool) Parameters() map[string]interface{} {
+	return checklistSchema.ToJSONSchema()
+}
+
+// checklistSchema is the single source of truth for Checklist's input schema.
+var checklistSchema = ChecklistTool{}.Schema()
+
 func (ChecklistTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		IncludeReferences bool   `json:"include_references"`
-		Artifact          string `json:"artifact"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p ChecklistInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[ChecklistInput]("Checklist", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if p.Artifact == "" {
 		p.Artifact = "spec.md"

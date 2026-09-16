@@ -17,6 +17,13 @@ import (
 type TasksToIssuesTool struct{}
 
 func (TasksToIssuesTool) Name() string { return "TasksToIssues" }
+
+// TasksToIssuesInput is the typed input for TasksToIssuesTool.
+type TasksToIssuesInput struct {
+	DryRun bool   `json:"dry_run"`
+	Labels string `json:"labels"`
+}
+
 func (TasksToIssuesTool) Aliases() []string {
 	return []string{"tasks_to_issues", "spec:tasks-to-issues"}
 }
@@ -25,29 +32,33 @@ func (TasksToIssuesTool) Description() string {
 	return "Convert unchecked tasks from tasks.md into GitHub issues. Requires `gh` CLI authenticated. Each task becomes an issue with labels derived from its phase heading."
 }
 
-func (TasksToIssuesTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"dry_run": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, show what issues would be created without actually creating them",
-			},
-			"labels": map[string]interface{}{
-				"type":        "string",
-				"description": "Comma-separated additional labels to add to all issues (e.g., 'spec,needs-review')",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (TasksToIssuesTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"dry_run": {Type: "boolean", Description: "If true, show what issues would be created without actually creating them"},
+			"labels":  {Type: "string", Description: "Comma-separated additional labels to add to all issues (e.g., 'spec,needs-review')"},
 		},
 	}
 }
 
+func (TasksToIssuesTool) Parameters() map[string]interface{} {
+	return tasksToIssuesSchema.ToJSONSchema()
+}
+
+// tasksToIssuesSchema is the single source of truth for TasksToIssues's input schema.
+var tasksToIssuesSchema = TasksToIssuesTool{}.Schema()
+
 func (TasksToIssuesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		DryRun bool   `json:"dry_run"`
-		Labels string `json:"labels"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p TasksToIssuesInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[TasksToIssuesInput]("TasksToIssues", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 
 	// Check gh CLI availability

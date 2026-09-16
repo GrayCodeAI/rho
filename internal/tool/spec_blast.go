@@ -15,6 +15,12 @@ import (
 type SpecBlastTool struct{}
 
 func (SpecBlastTool) Name() string { return "SpecBlast" }
+
+// SpecBlastInput is the typed input for SpecBlastTool.
+type SpecBlastInput struct {
+	TargetFile string `json:"target_file"`
+}
+
 func (SpecBlastTool) Aliases() []string {
 	return []string{"spec_blast", "spec:blast"}
 }
@@ -23,17 +29,23 @@ func (SpecBlastTool) Description() string {
 	return "Blast radius analysis for proposed changes. Estimates which files, functions, and dependencies will be affected by a change before implementation."
 }
 
-func (SpecBlastTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"target_file": map[string]interface{}{
-				"type":        "string",
-				"description": "File to analyze for blast radius",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecBlastTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"target_file": {Type: "string", Description: "File to analyze for blast radius"},
 		},
 	}
 }
+
+func (SpecBlastTool) Parameters() map[string]interface{} {
+	return specBlastSchema.ToJSONSchema()
+}
+
+// specBlastSchema is the single source of truth for SpecBlast's input schema.
+var specBlastSchema = SpecBlastTool{}.Schema()
 
 type BlastResult struct {
 	TargetFile   string   `json:"target_file"`
@@ -45,10 +57,8 @@ type BlastResult struct {
 }
 
 func (SpecBlastTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		TargetFile string `json:"target_file"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecBlastInput]("SpecBlast", input)
+	if err != nil {
 		return "", err
 	}
 	if p.TargetFile == "" {

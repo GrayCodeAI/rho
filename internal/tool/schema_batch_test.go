@@ -1470,3 +1470,442 @@ func TestSchemaPropertyExtensions(t *testing.T) {
 		t.Fatalf("oneOf = %v", om["oneOf"])
 	}
 }
+
+func TestSpecifySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecifyTool{}
+	props := schemaProps(t, SpecifyTool{}.Parameters())
+	if props["spec"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("spec type wrong")
+	}
+	req, _ := SpecifyTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "spec" {
+		t.Fatalf("required = %v, want [spec]", SpecifyTool{}.Parameters()["required"])
+	}
+}
+
+func TestPlanSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = PlanTool{}
+	props := schemaProps(t, PlanTool{}.Parameters())
+	if props["plan"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("plan type wrong")
+	}
+	req, _ := PlanTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "plan" {
+		t.Fatalf("required = %v, want [plan]", PlanTool{}.Parameters()["required"])
+	}
+}
+
+func TestTasksSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TasksTool{}
+	props := schemaProps(t, TasksTool{}.Parameters())
+	if props["tasks"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("tasks type wrong")
+	}
+	req, _ := TasksTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "tasks" {
+		t.Fatalf("required = %v, want [tasks]", TasksTool{}.Parameters()["required"])
+	}
+}
+
+func TestApproveImplementationSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ApproveImplementationTool{}
+	props := schemaProps(t, ApproveImplementationTool{}.Parameters())
+	if len(props) != 0 {
+		t.Fatalf("properties = %v, want empty", props)
+	}
+}
+
+func TestSpecStatusSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecStatusTool{}
+	props := schemaProps(t, SpecStatusTool{}.Parameters())
+	if props["slug"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("slug type wrong")
+	}
+}
+
+func TestSpecEditSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecEditTool{}
+	props := schemaProps(t, SpecEditTool{}.Parameters())
+	enum, ok := props["artifact"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "spec.md" || enum[3] != "specs.md" {
+		t.Fatalf("artifact enum = %v, want 4 options", props["artifact"])
+	}
+	req, _ := SpecEditTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "artifact" {
+		t.Fatalf("required = %v, want [artifact]", SpecEditTool{}.Parameters()["required"])
+	}
+}
+
+func TestSpecListSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecListTool{}
+	props := schemaProps(t, SpecListTool{}.Parameters())
+	if len(props) != 0 {
+		t.Fatalf("properties = %v, want empty", props)
+	}
+}
+
+func TestSpecResetSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecResetTool{}
+	props := schemaProps(t, SpecResetTool{}.Parameters())
+	if props["slug"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("slug type wrong")
+	}
+	if props["delete"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("delete type wrong")
+	}
+}
+
+func TestSpecConfigSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecConfigTool{}
+	props := schemaProps(t, SpecConfigTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "get" || enum[2] != "list" {
+		t.Fatalf("action enum = %v, want 3 options", props["action"])
+	}
+	req, _ := SpecConfigTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", SpecConfigTool{}.Parameters()["required"])
+	}
+}
+
+func TestProposalSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ProposalTool{}
+	props := schemaProps(t, ProposalTool{}.Parameters())
+	if props["title"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("title type wrong")
+	}
+	if props["proposal"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("proposal type wrong")
+	}
+	req, _ := ProposalTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "proposal" {
+		t.Fatalf("required = %v, want [proposal]", ProposalTool{}.Parameters()["required"])
+	}
+}
+
+func TestDesignSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = DesignTool{}
+	props := schemaProps(t, DesignTool{}.Parameters())
+	if props["design"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("design type wrong")
+	}
+	req, _ := DesignTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "design" {
+		t.Fatalf("required = %v, want [design]", DesignTool{}.Parameters()["required"])
+	}
+}
+
+func TestSpecAdaptiveSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecAdaptiveTool{}
+	props := schemaProps(t, SpecAdaptiveTool{}.Parameters())
+	if props["task_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("task_id type wrong")
+	}
+	if props["estimated_effort"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("estimated_effort type wrong")
+	}
+	if props["actual_effort"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("actual_effort type wrong")
+	}
+	if props["unplanned_deps"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("unplanned_deps type wrong")
+	}
+	if props["super_score"].(map[string]interface{})["type"] != "number" {
+		t.Fatal("super_score type wrong")
+	}
+	req, _ := SpecAdaptiveTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "task_id" {
+		t.Fatalf("required = %v, want [task_id]", SpecAdaptiveTool{}.Parameters()["required"])
+	}
+}
+
+func TestSpecAdrSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecAdrTool{}
+	props := schemaProps(t, SpecAdrTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "create" || enum[2] != "link" {
+		t.Fatalf("action enum = %v, want 3 options", props["action"])
+	}
+	if props["title"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("title type wrong")
+	}
+	if props["req_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("req_id type wrong")
+	}
+}
+
+func TestAnalyzeSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = AnalyzeTool{}
+	props := schemaProps(t, AnalyzeTool{}.Parameters())
+	if len(props) != 0 {
+		t.Fatalf("properties = %v, want empty", props)
+	}
+}
+
+func TestSpecBddSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecBddTool{}
+	props := schemaProps(t, SpecBddTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "generate" || enum[2] != "export" {
+		t.Fatalf("action enum = %v, want 3 options", props["action"])
+	}
+	enum2, ok2 := props["format"].(map[string]interface{})["enum"].([]interface{})
+	if !ok2 || len(enum2) != 3 || enum2[0] != "gherkin" || enum2[2] != "pytest-bdd" {
+		t.Fatalf("format enum = %v, want 3 options", props["format"])
+	}
+}
+
+func TestSpecBlastSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecBlastTool{}
+	props := schemaProps(t, SpecBlastTool{}.Parameters())
+	if props["target_file"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("target_file type wrong")
+	}
+}
+
+func TestChecklistSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ChecklistTool{}
+	props := schemaProps(t, ChecklistTool{}.Parameters())
+	if props["include_references"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("include_references type wrong")
+	}
+	enum, ok := props["artifact"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "spec.md" || enum[1] != "tasks.md" {
+		t.Fatalf("artifact enum = %v, want 2 options", props["artifact"])
+	}
+}
+
+func TestConstitutionSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ConstitutionTool{}
+	props := schemaProps(t, ConstitutionTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "get" || enum[3] != "validate" {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+	if props["rules"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("rules type wrong")
+	}
+	req, _ := ConstitutionTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", ConstitutionTool{}.Parameters()["required"])
+	}
+}
+
+func TestConvergeSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ConvergeTool{}
+	props := schemaProps(t, ConvergeTool{}.Parameters())
+	if props["append_tasks"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("append_tasks type wrong")
+	}
+}
+
+func TestSpecDriftSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecDriftTool{}
+	props := schemaProps(t, SpecDriftTool{}.Parameters())
+	if props["scan_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("scan_dir type wrong")
+	}
+}
+
+func TestSpecGroundSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecGroundTool{}
+	props := schemaProps(t, SpecGroundTool{}.Parameters())
+	enum, ok := props["stage"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 5 || enum[0] != "specify" || enum[4] != "implement" {
+		t.Fatalf("stage enum = %v, want 5 options", props["stage"])
+	}
+	if props["query"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("query type wrong")
+	}
+	req, _ := SpecGroundTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "stage" {
+		t.Fatalf("required = %v, want [stage]", SpecGroundTool{}.Parameters()["required"])
+	}
+}
+
+func TestSpecLinksSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecLinksTool{}
+	props := schemaProps(t, SpecLinksTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 2 || enum[0] != "check" || enum[1] != "add" {
+		t.Fatalf("action enum = %v, want 2 options", props["action"])
+	}
+}
+
+func TestSpecMasterSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecMasterTool{}
+	props := schemaProps(t, SpecMasterTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "read" || enum[2] != "resume" {
+		t.Fatalf("action enum = %v, want 3 options", props["action"])
+	}
+	req, _ := SpecMasterTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", SpecMasterTool{}.Parameters()["required"])
+	}
+}
+
+func TestSpecParallelSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecParallelTool{}
+	props := schemaProps(t, SpecParallelTool{}.Parameters())
+	if props["dry_run"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("dry_run type wrong")
+	}
+	if props["max_parallel"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("max_parallel type wrong")
+	}
+}
+
+func TestSpecPlanVariationsSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecPlanVariationsTool{}
+	props := schemaProps(t, SpecPlanVariationsTool{}.Parameters())
+	if props["count"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("count type wrong")
+	}
+	if props["selected"].(map[string]interface{})["type"] != "integer" {
+		t.Fatal("selected type wrong")
+	}
+}
+
+func TestSpecProgressSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecProgressTool{}
+	props := schemaProps(t, SpecProgressTool{}.Parameters())
+	if props["auto_update"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("auto_update type wrong")
+	}
+	if props["scan_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("scan_dir type wrong")
+	}
+}
+
+func TestSpecPropertiesSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecPropertiesTool{}
+	props := schemaProps(t, SpecPropertiesTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "define" || enum[3] != "coverage" {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+	if props["property"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("property type wrong")
+	}
+	if props["req_id"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("req_id type wrong")
+	}
+}
+
+func TestSpecProvenanceSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecProvenanceTool{}
+	props := schemaProps(t, SpecProvenanceTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "record" || enum[2] != "audit" {
+		t.Fatalf("action enum = %v, want 3 options", props["action"])
+	}
+	if props["file"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("file type wrong")
+	}
+	if props["model"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("model type wrong")
+	}
+}
+
+func TestSpecReviewSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecReviewTool{}
+	props := schemaProps(t, SpecReviewTool{}.Parameters())
+	enum, ok := props["scope"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "spec" || enum[2] != "full" {
+		t.Fatalf("scope enum = %v, want 3 options", props["scope"])
+	}
+}
+
+func TestSpecScaleSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecScaleTool{}
+	props := schemaProps(t, SpecScaleTool{}.Parameters())
+	if props["scan_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("scan_dir type wrong")
+	}
+}
+
+func TestSpecSuperSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecSuperTool{}
+	props := schemaProps(t, SpecSuperTool{}.Parameters())
+	if props["scan_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("scan_dir type wrong")
+	}
+	if props["language"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("language type wrong")
+	}
+}
+
+func TestTasksToIssuesSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = TasksToIssuesTool{}
+	props := schemaProps(t, TasksToIssuesTool{}.Parameters())
+	if props["dry_run"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("dry_run type wrong")
+	}
+	if props["labels"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("labels type wrong")
+	}
+}
+
+func TestSpecTestGenSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecTestGenTool{}
+	props := schemaProps(t, SpecTestGenTool{}.Parameters())
+	if props["scan_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("scan_dir type wrong")
+	}
+	enum, ok := props["language"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "go" || enum[2] != "py" {
+		t.Fatalf("language enum = %v, want 3 options", props["language"])
+	}
+}
+
+func TestSpecTraceSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecTraceTool{}
+	props := schemaProps(t, SpecTraceTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "matrix" || enum[3] != "gaps" {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+	if props["scan_dir"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("scan_dir type wrong")
+	}
+}
+
+func TestSpecVersionSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecVersionTool{}
+	props := schemaProps(t, SpecVersionTool{}.Parameters())
+	if props["message"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("message type wrong")
+	}
+	if props["dry_run"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("dry_run type wrong")
+	}
+	if props["include_specs"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("include_specs type wrong")
+	}
+}
+
+func TestClarifySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ClarifyTool{}
+	props := schemaProps(t, ClarifyTool{}.Parameters())
+	enum, ok := props["artifact"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "spec.md" || enum[2] != "tasks.md" {
+		t.Fatalf("artifact enum = %v, want 3 options", props["artifact"])
+	}
+}
+
+func TestSpecClarifySchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SpecClarifyTool{}
+	props := schemaProps(t, SpecClarifyTool{}.Parameters())
+	enum, ok := props["phase"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 5 || enum[0] != "proposal" || enum[4] != "tasks" {
+		t.Fatalf("phase enum = %v, want 5 options", props["phase"])
+	}
+	if props["auto_resolve"].(map[string]interface{})["type"] != "boolean" {
+		t.Fatal("auto_resolve type wrong")
+	}
+	req, _ := SpecClarifyTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "phase" {
+		t.Fatalf("required = %v, want [phase]", SpecClarifyTool{}.Parameters()["required"])
+	}
+}

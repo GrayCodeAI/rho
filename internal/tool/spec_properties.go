@@ -14,6 +14,14 @@ import (
 type SpecPropertiesTool struct{}
 
 func (SpecPropertiesTool) Name() string { return "SpecProperties" }
+
+// SpecPropertiesInput is the typed input for SpecPropertiesTool.
+type SpecPropertiesInput struct {
+	Action   string `json:"action"`
+	Property string `json:"property"`
+	ReqID    string `json:"req_id"`
+}
+
 func (SpecPropertiesTool) Aliases() []string {
 	return []string{"spec_properties", "spec:properties"}
 }
@@ -22,26 +30,25 @@ func (SpecPropertiesTool) Description() string {
 	return "Define and verify formal correctness properties for specs. Properties are statements that must hold true for all valid executions, serving as the bridge between human-readable specifications and machine-verifiable correctness guarantees."
 }
 
-func (SpecPropertiesTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: define (add property), verify (check all), list (show properties), coverage (property coverage)",
-				"enum":        []string{"define", "verify", "list", "coverage"},
-			},
-			"property": map[string]interface{}{
-				"type":        "string",
-				"description": "Property statement (required for define)",
-			},
-			"req_id": map[string]interface{}{
-				"type":        "string",
-				"description": "Requirement ID this property validates",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecPropertiesTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":   {Type: "string", Enum: []interface{}{"define", "verify", "list", "coverage"}, Description: "Action: define (add property), verify (check all), list (show properties), coverage (property coverage)"},
+			"property": {Type: "string", Description: "Property statement (required for define)"},
+			"req_id":   {Type: "string", Description: "Requirement ID this property validates"},
 		},
 	}
 }
+
+func (SpecPropertiesTool) Parameters() map[string]interface{} {
+	return specPropertiesSchema.ToJSONSchema()
+}
+
+// specPropertiesSchema is the single source of truth for SpecProperties's input schema.
+var specPropertiesSchema = SpecPropertiesTool{}.Schema()
 
 type CorrectnessProperty struct {
 	ID        string `json:"id"`
@@ -51,12 +58,8 @@ type CorrectnessProperty struct {
 }
 
 func (SpecPropertiesTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action   string `json:"action"`
-		Property string `json:"property"`
-		ReqID    string `json:"req_id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecPropertiesInput]("SpecProperties", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {

@@ -13,6 +13,13 @@ import (
 type SpecPlanVariationsTool struct{}
 
 func (SpecPlanVariationsTool) Name() string { return "SpecPlanVariations" }
+
+// SpecPlanVariationsInput is the typed input for SpecPlanVariationsTool.
+type SpecPlanVariationsInput struct {
+	Count    int `json:"count"`
+	Selected int `json:"selected"`
+}
+
 func (SpecPlanVariationsTool) Aliases() []string {
 	return []string{"spec_plan_variations", "spec:plan_variations"}
 }
@@ -21,29 +28,33 @@ func (SpecPlanVariationsTool) Description() string {
 	return "Generate multiple implementation plan variations for the active spec. Each variation emphasizes different tradeoffs: performance, simplicity, maintainability, or speed. Outputs a comparison matrix so the agent can choose the best approach."
 }
 
-func (SpecPlanVariationsTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"count": map[string]interface{}{
-				"type":        "integer",
-				"description": "Number of variations to generate (2-4, default 3)",
-			},
-			"selected": map[string]interface{}{
-				"type":        "integer",
-				"description": "Select a variation by number (1-based) to write as plan.md",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecPlanVariationsTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"count":    {Type: "integer", Description: "Number of variations to generate (2-4, default 3)"},
+			"selected": {Type: "integer", Description: "Select a variation by number (1-based) to write as plan.md"},
 		},
 	}
 }
 
+func (SpecPlanVariationsTool) Parameters() map[string]interface{} {
+	return specPlanVariationsSchema.ToJSONSchema()
+}
+
+// specPlanVariationsSchema is the single source of truth for SpecPlanVariations's input schema.
+var specPlanVariationsSchema = SpecPlanVariationsTool{}.Schema()
+
 func (SpecPlanVariationsTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Count    int `json:"count"`
-		Selected int `json:"selected"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecPlanVariationsInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecPlanVariationsInput]("SpecPlanVariations", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if p.Count < 2 || p.Count > 4 {
 		p.Count = 3

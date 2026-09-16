@@ -17,6 +17,13 @@ import (
 type SpecSuperTool struct{}
 
 func (SpecSuperTool) Name() string { return "SpecSuper" }
+
+// SpecSuperInput is the typed input for SpecSuperTool.
+type SpecSuperInput struct {
+	ScanDir  string `json:"scan_dir"`
+	Language string `json:"language"`
+}
+
 func (SpecSuperTool) Aliases() []string {
 	return []string{"spec_super", "spec:super"}
 }
@@ -25,21 +32,24 @@ func (SpecSuperTool) Description() string {
 	return "Evaluate codebase against S.U.P.E.R architectural principles: Single Purpose, Unidirectional Flow, Ports over Implementation, Environment-Agnostic, Replaceable Parts. Returns per-dimension scores and actionable recommendations."
 }
 
-func (SpecSuperTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"scan_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory to scan (default: current directory)",
-			},
-			"language": map[string]interface{}{
-				"type":        "string",
-				"description": "Language to analyze: go, ts, py (default: auto-detect)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecSuperTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"scan_dir": {Type: "string", Description: "Directory to scan (default: current directory)"},
+			"language": {Type: "string", Description: "Language to analyze: go, ts, py (default: auto-detect)"},
 		},
 	}
 }
+
+func (SpecSuperTool) Parameters() map[string]interface{} {
+	return specSuperSchema.ToJSONSchema()
+}
+
+// specSuperSchema is the single source of truth for SpecSuper's input schema.
+var specSuperSchema = SpecSuperTool{}.Schema()
 
 type SuperScore struct {
 	SinglePurpose       float64 `json:"single_purpose"`
@@ -58,12 +68,13 @@ type SuperFinding struct {
 }
 
 func (SpecSuperTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ScanDir  string `json:"scan_dir"`
-		Language string `json:"language"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecSuperInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecSuperInput]("SpecSuper", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if p.ScanDir == "" {
 		p.ScanDir, _ = os.Getwd()

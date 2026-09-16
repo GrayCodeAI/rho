@@ -12,6 +12,14 @@ import (
 type SpecAdrTool struct{}
 
 func (SpecAdrTool) Name() string { return "SpecAdr" }
+
+// SpecAdrInput is the typed input for SpecAdrTool.
+type SpecAdrInput struct {
+	Action string `json:"action"`
+	Title  string `json:"title"`
+	ReqID  string `json:"req_id"`
+}
+
 func (SpecAdrTool) Aliases() []string {
 	return []string{"spec_adr", "spec:adr"}
 }
@@ -20,34 +28,29 @@ func (SpecAdrTool) Description() string {
 	return "Create and manage Architecture Decision Records. Documents key technical decisions with context, options considered, rationale, and consequences. Links decisions to requirements they satisfy."
 }
 
-func (SpecAdrTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: create (new ADR), list (show all), link (link to requirement)",
-				"enum":        []string{"create", "list", "link"},
-			},
-			"title": map[string]interface{}{
-				"type":        "string",
-				"description": "ADR title (required for create)",
-			},
-			"req_id": map[string]interface{}{
-				"type":        "string",
-				"description": "REQ ID to link to (required for link)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecAdrTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action": {Type: "string", Enum: []interface{}{"create", "list", "link"}, Description: "Action: create (new ADR), list (show all), link (link to requirement)"},
+			"title":  {Type: "string", Description: "ADR title (required for create)"},
+			"req_id": {Type: "string", Description: "REQ ID to link to (required for link)"},
 		},
 	}
 }
 
+func (SpecAdrTool) Parameters() map[string]interface{} {
+	return specAdrSchema.ToJSONSchema()
+}
+
+// specAdrSchema is the single source of truth for SpecAdr's input schema.
+var specAdrSchema = SpecAdrTool{}.Schema()
+
 func (SpecAdrTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Action string `json:"action"`
-		Title  string `json:"title"`
-		ReqID  string `json:"req_id"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecAdrInput]("SpecAdr", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Action == "" {

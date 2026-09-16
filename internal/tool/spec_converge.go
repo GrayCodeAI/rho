@@ -16,31 +16,45 @@ import (
 // and unresolved requirements, then optionally appends convergence tasks.
 type ConvergeTool struct{}
 
-func (ConvergeTool) Name() string      { return "Converge" }
+func (ConvergeTool) Name() string { return "Converge" }
+
+// ConvergeInput is the typed input for ConvergeTool.
+type ConvergeInput struct {
+	AppendTasks bool `json:"append_tasks"`
+}
+
 func (ConvergeTool) Aliases() []string { return []string{"converge", "spec_converge", "spec:converge"} }
 
 func (ConvergeTool) Description() string {
 	return "Assess the gap between the active spec and the codebase. Checks incomplete tasks, missing REQ coverage, orphan citations, and constitution compliance. Optionally appends convergence tasks to tasks.md."
 }
 
-func (ConvergeTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"append_tasks": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, append convergence tasks to tasks.md for remaining work",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ConvergeTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"append_tasks": {Type: "boolean", Description: "If true, append convergence tasks to tasks.md for remaining work"},
 		},
 	}
 }
 
+func (ConvergeTool) Parameters() map[string]interface{} {
+	return convergeSchema.ToJSONSchema()
+}
+
+// convergeSchema is the single source of truth for Converge's input schema.
+var convergeSchema = ConvergeTool{}.Schema()
+
 func (ConvergeTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		AppendTasks bool `json:"append_tasks"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p ConvergeInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[ConvergeInput]("Converge", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 
 	slug, err := specSlug(ctx)

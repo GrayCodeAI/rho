@@ -21,32 +21,45 @@ var titleCaser = cases.Title(language.Und)
 
 type ClarifyTool struct{}
 
-func (ClarifyTool) Name() string      { return "Clarify" }
+func (ClarifyTool) Name() string { return "Clarify" }
+
+// ClarifyInput is the typed input for ClarifyTool.
+type ClarifyInput struct {
+	Artifact string `json:"artifact"`
+}
+
 func (ClarifyTool) Aliases() []string { return []string{"clarify", "spec_clarify", "spec:clarify"} }
 
 func (ClarifyTool) Description() string {
 	return "Analyze the active spec for underspecified areas, ambiguities, and missing information. Generates targeted clarification questions that should be resolved before proceeding to implementation. Call this after Specify to refine requirements."
 }
 
-func (ClarifyTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"artifact": map[string]interface{}{
-				"type":        "string",
-				"description": "Which artifact to analyze: spec.md (default), plan.md, or tasks.md",
-				"enum":        []string{"spec.md", "plan.md", "tasks.md"},
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (ClarifyTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"artifact": {Type: "string", Enum: []interface{}{"spec.md", "plan.md", "tasks.md"}, Description: "Which artifact to analyze: spec.md (default), plan.md, or tasks.md"},
 		},
 	}
 }
 
+func (ClarifyTool) Parameters() map[string]interface{} {
+	return clarifySchema.ToJSONSchema()
+}
+
+// clarifySchema is the single source of truth for Clarify's input schema.
+var clarifySchema = ClarifyTool{}.Schema()
+
 func (ClarifyTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Artifact string `json:"artifact"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p ClarifyInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[ClarifyInput]("Clarify", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if p.Artifact == "" {
 		p.Artifact = "spec.md"
@@ -86,6 +99,13 @@ func (ClarifyTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 type SpecClarifyTool struct{}
 
 func (SpecClarifyTool) Name() string { return "SpecClarify" }
+
+// SpecClarifyInput is the typed input for SpecClarifyTool.
+type SpecClarifyInput struct {
+	Phase       string `json:"phase"`
+	AutoResolve bool   `json:"auto_resolve"`
+}
+
 func (SpecClarifyTool) Aliases() []string {
 	return []string{"spec_clarify_phase", "spec:clarify_phase"}
 }
@@ -94,23 +114,26 @@ func (SpecClarifyTool) Description() string {
 	return "Resolve ambiguities before advancing to the next spec phase. Analyzes proposal/spec for unclear requirements, missing context, and unstated assumptions. Returns targeted questions that must be answered before proceeding."
 }
 
-func (SpecClarifyTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"phase": map[string]interface{}{
-				"type":        "string",
-				"description": "Phase to clarify for: proposal, spec, design, plan, tasks",
-				"enum":        []string{"proposal", "spec", "design", "plan", "tasks"},
-			},
-			"auto_resolve": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, attempt to resolve ambiguities using codebase context",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecClarifyTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"phase":        {Type: "string", Enum: []interface{}{"proposal", "spec", "design", "plan", "tasks"}, Description: "Phase to clarify for: proposal, spec, design, plan, tasks"},
+			"auto_resolve": {Type: "boolean", Description: "If true, attempt to resolve ambiguities using codebase context"},
 		},
-		"required": []string{"phase"},
+
+		Required: []string{"phase"},
 	}
 }
+
+func (SpecClarifyTool) Parameters() map[string]interface{} {
+	return specClarifySchema.ToJSONSchema()
+}
+
+// specClarifySchema is the single source of truth for SpecClarify's input schema.
+var specClarifySchema = SpecClarifyTool{}.Schema()
 
 type ClarifyQuestion struct {
 	Category string `json:"category"`
@@ -121,11 +144,8 @@ type ClarifyQuestion struct {
 }
 
 func (SpecClarifyTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Phase       string `json:"phase"`
-		AutoResolve bool   `json:"auto_resolve"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecClarifyInput]("SpecClarify", input)
+	if err != nil {
 		return "", err
 	}
 

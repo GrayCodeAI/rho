@@ -16,6 +16,13 @@ import (
 type SpecParallelTool struct{}
 
 func (SpecParallelTool) Name() string { return "SpecParallel" }
+
+// SpecParallelInput is the typed input for SpecParallelTool.
+type SpecParallelInput struct {
+	DryRun      bool `json:"dry_run"`
+	MaxParallel int  `json:"max_parallel"`
+}
+
 func (SpecParallelTool) Aliases() []string {
 	return []string{"spec_parallel", "spec:parallel"}
 }
@@ -24,29 +31,33 @@ func (SpecParallelTool) Description() string {
 	return "Analyze tasks.md for parallel execution groups and execute independent tasks concurrently. Parses task dependencies, identifies conflict-free groups, and runs them in parallel sub-agents."
 }
 
-func (SpecParallelTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"dry_run": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, only analyze and report groups without executing",
-			},
-			"max_parallel": map[string]interface{}{
-				"type":        "integer",
-				"description": "Maximum number of parallel tasks (default 8)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecParallelTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"dry_run":      {Type: "boolean", Description: "If true, only analyze and report groups without executing"},
+			"max_parallel": {Type: "integer", Description: "Maximum number of parallel tasks (default 8)"},
 		},
 	}
 }
 
+func (SpecParallelTool) Parameters() map[string]interface{} {
+	return specParallelSchema.ToJSONSchema()
+}
+
+// specParallelSchema is the single source of truth for SpecParallel's input schema.
+var specParallelSchema = SpecParallelTool{}.Schema()
+
 func (SpecParallelTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		DryRun      bool `json:"dry_run"`
-		MaxParallel int  `json:"max_parallel"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecParallelInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecParallelInput]("SpecParallel", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if p.MaxParallel <= 0 {
 		p.MaxParallel = 8

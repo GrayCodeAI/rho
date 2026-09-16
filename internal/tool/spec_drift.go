@@ -15,6 +15,12 @@ import (
 type SpecDriftTool struct{}
 
 func (SpecDriftTool) Name() string { return "SpecDrift" }
+
+// SpecDriftInput is the typed input for SpecDriftTool.
+type SpecDriftInput struct {
+	ScanDir string `json:"scan_dir"`
+}
+
 func (SpecDriftTool) Aliases() []string {
 	return []string{"spec_drift", "spec:drift"}
 }
@@ -23,23 +29,27 @@ func (SpecDriftTool) Description() string {
 	return "Detect drift between specs and implementation. Compares requirements in spec.md against actual code coverage."
 }
 
-func (SpecDriftTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"scan_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory to scan (default: current directory)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecDriftTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"scan_dir": {Type: "string", Description: "Directory to scan (default: current directory)"},
 		},
 	}
 }
 
+func (SpecDriftTool) Parameters() map[string]interface{} {
+	return specDriftSchema.ToJSONSchema()
+}
+
+// specDriftSchema is the single source of truth for SpecDrift's input schema.
+var specDriftSchema = SpecDriftTool{}.Schema()
+
 func (SpecDriftTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		ScanDir string `json:"scan_dir"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SpecDriftInput]("SpecDrift", input)
+	if err != nil {
 		return "", err
 	}
 	if p.ScanDir == "" {

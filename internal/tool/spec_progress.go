@@ -15,6 +15,13 @@ import (
 type SpecProgressTool struct{}
 
 func (SpecProgressTool) Name() string { return "SpecProgress" }
+
+// SpecProgressInput is the typed input for SpecProgressTool.
+type SpecProgressInput struct {
+	AutoUpdate bool   `json:"auto_update"`
+	ScanDir    string `json:"scan_dir"`
+}
+
 func (SpecProgressTool) Aliases() []string {
 	return []string{"spec_progress", "spec:progress"}
 }
@@ -23,29 +30,33 @@ func (SpecProgressTool) Description() string {
 	return "Analyze implementation progress by scanning code for REQ citations. Marks tasks complete when their requirements are implemented. Reports completion percentage and remaining work."
 }
 
-func (SpecProgressTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"auto_update": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, automatically mark implemented tasks as complete in tasks.md",
-			},
-			"scan_dir": map[string]interface{}{
-				"type":        "string",
-				"description": "Directory to scan for REQ citations (default: current directory)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SpecProgressTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"auto_update": {Type: "boolean", Description: "If true, automatically mark implemented tasks as complete in tasks.md"},
+			"scan_dir":    {Type: "string", Description: "Directory to scan for REQ citations (default: current directory)"},
 		},
 	}
 }
 
+func (SpecProgressTool) Parameters() map[string]interface{} {
+	return specProgressSchema.ToJSONSchema()
+}
+
+// specProgressSchema is the single source of truth for SpecProgress's input schema.
+var specProgressSchema = SpecProgressTool{}.Schema()
+
 func (SpecProgressTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		AutoUpdate bool   `json:"auto_update"`
-		ScanDir    string `json:"scan_dir"`
-	}
-	if input != nil {
-		_ = json.Unmarshal(input, &p)
+	var p SpecProgressInput
+	if len(input) > 0 && string(input) != "null" {
+		decoded, err := DecodeInput[SpecProgressInput]("SpecProgress", input)
+		if err != nil {
+			return "", err
+		}
+		p = decoded
 	}
 	if p.ScanDir == "" {
 		p.ScanDir, _ = os.Getwd()
