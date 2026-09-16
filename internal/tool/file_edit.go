@@ -18,31 +18,45 @@ func (FileEditTool) Description() string {
 	return "Edit a file by replacing an exact string match with new content."
 }
 
-func (FileEditTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path":       map[string]interface{}{"type": "string", "description": "File path to edit"},
-			"file_path":  map[string]interface{}{"type": "string", "description": "Archive-compatible alias for path"},
-			"old_str":    map[string]interface{}{"type": "string", "description": "Exact string to find and replace"},
-			"old_string": map[string]interface{}{"type": "string", "description": "Archive-compatible alias for old_str"},
-			"new_str":    map[string]interface{}{"type": "string", "description": "Replacement string"},
-			"new_string": map[string]interface{}{"type": "string", "description": "Archive-compatible alias for new_str"},
+// FileEditInput is the typed input for FileEditTool. NewStr/NewString are
+// pointers so an explicit empty replacement is distinguishable from absent.
+type FileEditInput struct {
+	Path      string  `json:"path"`
+	FilePath  string  `json:"file_path"`
+	OldStr    string  `json:"old_str"`
+	OldString string  `json:"old_string"`
+	NewStr    *string `json:"new_str"`
+	NewString *string `json:"new_string"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge. Alias descriptions are preserved verbatim: the input
+// validator discovers aliases from them.
+func (FileEditTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":       {Type: "string", Description: "File path to edit"},
+			"file_path":  {Type: "string", Description: "Archive-compatible alias for path"},
+			"old_str":    {Type: "string", Description: "Exact string to find and replace"},
+			"old_string": {Type: "string", Description: "Archive-compatible alias for old_str"},
+			"new_str":    {Type: "string", Description: "Replacement string"},
+			"new_string": {Type: "string", Description: "Archive-compatible alias for new_str"},
 		},
-		"required": []string{"path", "old_str"},
+		Required: []string{"path", "old_str"},
 	}
 }
 
+func (FileEditTool) Parameters() map[string]interface{} {
+	return fileEditSchema.ToJSONSchema()
+}
+
+// fileEditSchema is the single source of truth for FileEdit's input schema.
+var fileEditSchema = FileEditTool{}.Schema()
+
 func (FileEditTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path      string  `json:"path"`
-		FilePath  string  `json:"file_path"`
-		OldStr    string  `json:"old_str"`
-		OldString string  `json:"old_string"`
-		NewStr    *string `json:"new_str"`
-		NewString *string `json:"new_string"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[FileEditInput]("FileEdit", input)
+	if err != nil {
 		return "", err
 	}
 	path := p.Path

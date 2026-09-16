@@ -118,3 +118,60 @@ func TestMatchesRange(t *testing.T) {
 		t.Fatal("no bounds should pass")
 	}
 }
+
+func TestDownloadSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = DownloadTool{}
+	props := schemaProps(t, DownloadTool{}.Parameters())
+	for _, f := range []string{"url", "destination"} {
+		if props[f].(map[string]interface{})["type"] != "string" {
+			t.Fatalf("%s type wrong", f)
+		}
+	}
+	_, hasRequired := DownloadTool{}.Parameters()["required"]
+	if hasRequired {
+		t.Fatalf("Download has no required fields, got %v", DownloadTool{}.Parameters()["required"])
+	}
+}
+
+func TestWebFetchSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = WebFetchTool{}
+	props := schemaProps(t, WebFetchTool{}.Parameters())
+	if props["url"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("url type wrong")
+	}
+	req, _ := WebFetchTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "url" {
+		t.Fatalf("required = %v, want [url]", WebFetchTool{}.Parameters()["required"])
+	}
+}
+
+func TestFileWriteSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = FileWriteTool{}
+	props := schemaProps(t, FileWriteTool{}.Parameters())
+	// The file_path alias marker must survive: the validator discovers
+	// aliases from descriptions.
+	if desc := props["file_path"].(map[string]interface{})["description"]; desc != "Archive-compatible alias for path" {
+		t.Fatalf("file_path description = %v, alias marker lost", desc)
+	}
+	req, _ := FileWriteTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "path" || req[1] != "content" {
+		t.Fatalf("required = %v, want [path content]", FileWriteTool{}.Parameters()["required"])
+	}
+}
+
+func TestFileEditSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = FileEditTool{}
+	props := schemaProps(t, FileEditTool{}.Parameters())
+	for _, f := range []string{"path", "old_str", "new_str"} {
+		if props[f].(map[string]interface{})["type"] != "string" {
+			t.Fatalf("%s type wrong", f)
+		}
+	}
+	if desc := props["old_string"].(map[string]interface{})["description"]; desc != "Archive-compatible alias for old_str" {
+		t.Fatalf("old_string description = %v, alias marker lost", desc)
+	}
+	req, _ := FileEditTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "path" || req[1] != "old_str" {
+		t.Fatalf("required = %v, want [path old_str]", FileEditTool{}.Parameters()["required"])
+	}
+}
