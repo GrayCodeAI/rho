@@ -19,15 +19,29 @@ func (WebFetchTool) Description() string {
 	return "Fetch a URL and return its content as text. HTML is converted to plain text."
 }
 
-func (WebFetchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"url": map[string]interface{}{"type": "string", "description": "URL to fetch"},
+// WebFetchInput is the typed input for WebFetchTool.
+type WebFetchInput struct {
+	URL string `json:"url"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (WebFetchTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"url": {Type: "string", Description: "URL to fetch"},
 		},
-		"required": []string{"url"},
+		Required: []string{"url"},
 	}
 }
+
+func (WebFetchTool) Parameters() map[string]interface{} {
+	return webFetchSchema.ToJSONSchema()
+}
+
+// webFetchSchema is the single source of truth for WebFetch's input schema.
+var webFetchSchema = WebFetchTool{}.Schema()
 
 // Timeout declares WebFetch's execution budget so the engine's dispatch
 // deadline matches the tool's own 30s HTTP deadline. Declared budgets win
@@ -40,10 +54,8 @@ var (
 )
 
 func (WebFetchTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		URL string `json:"url"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[WebFetchInput]("WebFetch", input)
+	if err != nil {
 		return "", err
 	}
 	if p.URL == "" {

@@ -21,24 +21,36 @@ func (DownloadTool) Description() string {
 	return "Download a file from a URL and save it to a local path."
 }
 
-func (DownloadTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"url":         map[string]interface{}{"type": "string", "description": "URL to download from"},
-			"destination": map[string]interface{}{"type": "string", "description": "Local file path to save to"},
+// DownloadInput is the typed input for DownloadTool.
+type DownloadInput struct {
+	URL         string `json:"url"`
+	Destination string `json:"destination"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (DownloadTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"url":         {Type: "string", Description: "URL to download from"},
+			"destination": {Type: "string", Description: "Local file path to save to"},
 		},
 	}
 }
 
+func (DownloadTool) Parameters() map[string]interface{} {
+	return downloadSchema.ToJSONSchema()
+}
+
+// downloadSchema is the single source of truth for Download's input schema.
+var downloadSchema = DownloadTool{}.Schema()
+
 const maxDownloadSize = 50 * 1024 * 1024 // 50MB
 
 func (DownloadTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		URL         string `json:"url"`
-		Destination string `json:"destination"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[DownloadInput]("Download", input)
+	if err != nil {
 		return "", err
 	}
 	if p.URL == "" || p.Destination == "" {

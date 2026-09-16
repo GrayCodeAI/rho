@@ -18,25 +18,38 @@ func (FileWriteTool) Description() string {
 	return "Create or overwrite a file with the given content."
 }
 
-func (FileWriteTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path":      map[string]interface{}{"type": "string", "description": "File path to write"},
-			"file_path": map[string]interface{}{"type": "string", "description": "Archive-compatible alias for path"},
-			"content":   map[string]interface{}{"type": "string", "description": "File content"},
+// FileWriteInput is the typed input for FileWriteTool.
+type FileWriteInput struct {
+	Path     string `json:"path"`
+	FilePath string `json:"file_path"`
+	Content  string `json:"content"`
+}
+
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge. Alias descriptions are preserved verbatim: the input
+// validator discovers aliases from them.
+func (FileWriteTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path":      {Type: "string", Description: "File path to write"},
+			"file_path": {Type: "string", Description: "Archive-compatible alias for path"},
+			"content":   {Type: "string", Description: "File content"},
 		},
-		"required": []string{"path", "content"},
+		Required: []string{"path", "content"},
 	}
 }
 
+func (FileWriteTool) Parameters() map[string]interface{} {
+	return fileWriteSchema.ToJSONSchema()
+}
+
+// fileWriteSchema is the single source of truth for FileWrite's input schema.
+var fileWriteSchema = FileWriteTool{}.Schema()
+
 func (FileWriteTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Path     string `json:"path"`
-		FilePath string `json:"file_path"`
-		Content  string `json:"content"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[FileWriteInput]("FileWrite", input)
+	if err != nil {
 		return "", err
 	}
 	path := p.Path
