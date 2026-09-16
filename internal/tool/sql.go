@@ -24,6 +24,15 @@ import (
 // dialect light up without further changes here.
 type SQLTool struct{}
 
+// SQLInput is the typed input for SQLTool.
+type SQLInput struct {
+	Driver     string `json:"driver"`
+	DSN        string `json:"dsn"`
+	Query      string `json:"query"`
+	AllowWrite bool   `json:"allow_write"`
+	MaxRows    int    `json:"max_rows"`
+}
+
 func (SQLTool) Name() string      { return "SQL" }
 func (SQLTool) Aliases() []string { return []string{"sql", "sql_query"} }
 
@@ -40,37 +49,28 @@ func (SQLTool) Description() string {
 // can prompt when appropriate.
 func (SQLTool) RiskLevel() string { return "medium" }
 
-func (SQLTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"driver": map[string]interface{}{
-				"type":        "string",
-				"description": "Database dialect: one of sqlite, postgres, mysql. Defaults to sqlite.",
-				"enum":        []string{"sqlite", "postgres", "mysql"},
-			},
-			"dsn": map[string]interface{}{
-				"type": "string",
-				"description": "Data source name / connection string. For sqlite " +
-					"this is the file path (or \":memory:\").",
-			},
-			"query": map[string]interface{}{
-				"type":        "string",
-				"description": "The SQL statement to execute.",
-			},
-			"allow_write": map[string]interface{}{
-				"type": "boolean",
-				"description": "Allow destructive / mutating statements. When false " +
-					"(the default) only read-only queries are permitted.",
-			},
-			"max_rows": map[string]interface{}{
-				"type":        "integer",
-				"description": "Maximum number of rows to return (default 100).",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (SQLTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"driver":      {Type: "string", Enum: []interface{}{"sqlite", "postgres", "mysql"}, Description: "Database dialect: one of sqlite, postgres, mysql. Defaults to sqlite."},
+			"dsn":         {Type: "string", Description: `Data source name / connection string. For sqlite this is the file path (or ":memory:").`},
+			"query":       {Type: "string", Description: "The SQL statement to execute."},
+			"allow_write": {Type: "boolean", Description: "Allow destructive / mutating statements. When false (the default) only read-only queries are permitted."},
+			"max_rows":    {Type: "integer", Description: "Maximum number of rows to return (default 100)."},
 		},
-		"required": []string{"dsn", "query"},
+		Required: []string{"dsn", "query"},
 	}
 }
+
+func (SQLTool) Parameters() map[string]interface{} {
+	return sqlSchema.ToJSONSchema()
+}
+
+// sqlSchema is the single source of truth for SQL's input schema.
+var sqlSchema = SQLTool{}.Schema()
 
 // driverName maps a user-facing dialect to its database/sql driver name. The
 // bool reports whether rho bundles a driver for that dialect.
@@ -250,14 +250,8 @@ func firstSQLKeyword(query string) string {
 }
 
 func (t SQLTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Driver     string `json:"driver"`
-		DSN        string `json:"dsn"`
-		Query      string `json:"query"`
-		AllowWrite bool   `json:"allow_write"`
-		MaxRows    int    `json:"max_rows"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[SQLInput]("SQL", input)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(p.DSN) == "" {

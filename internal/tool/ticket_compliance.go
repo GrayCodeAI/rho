@@ -385,58 +385,47 @@ func (t *TicketComplianceTool) Description() string {
 }
 
 // Parameters returns the JSON schema for the tool's input.
-func (t *TicketComplianceTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"branch_name": map[string]interface{}{
-				"type":        "string",
-				"description": "The current branch name to extract ticket references from",
-			},
-			"pr_description": map[string]interface{}{
-				"type":        "string",
-				"description": "The PR description/body text to extract ticket references from",
-			},
-			"ticket_content": map[string]interface{}{
-				"type":        "string",
-				"description": "The raw ticket/issue content including title, description, and acceptance criteria",
-			},
-			"ticket_id": map[string]interface{}{
-				"type":        "string",
-				"description": "The ticket/issue identifier (e.g., RHO-123, #42)",
-			},
-			"ticket_source": map[string]interface{}{
-				"type":        "string",
-				"description": "The ticket source system: github, jira, or linear",
-				"enum":        []string{"github", "jira", "linear"},
-			},
-			"diff": map[string]interface{}{
-				"type":        "string",
-				"description": "The PR diff to check against ticket requirements",
-			},
-			"commit_messages": map[string]interface{}{
-				"type":        "string",
-				"description": "The commit messages in the PR",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (t *TicketComplianceTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"branch_name":     {Type: "string", Description: "The current branch name to extract ticket references from"},
+			"pr_description":  {Type: "string", Description: "The PR description/body text to extract ticket references from"},
+			"ticket_content":  {Type: "string", Description: "The raw ticket/issue content including title, description, and acceptance criteria"},
+			"ticket_id":       {Type: "string", Description: "The ticket/issue identifier (e.g., RHO-123, #42)"},
+			"ticket_source":   {Type: "string", Enum: []interface{}{"github", "jira", "linear"}, Description: "The ticket source system: github, jira, or linear"},
+			"diff":            {Type: "string", Description: "The PR diff to check against ticket requirements"},
+			"commit_messages": {Type: "string", Description: "The commit messages in the PR"},
 		},
-		"required": []string{"ticket_content", "diff"},
+		Required: []string{"ticket_content", "diff"},
 	}
+}
+
+func (t *TicketComplianceTool) Parameters() map[string]interface{} {
+	return ticketComplianceSchema.ToJSONSchema()
+}
+
+// ticketComplianceSchema is the single source of truth for TicketCompliance's input schema.
+var ticketComplianceSchema = (&TicketComplianceTool{}).Schema()
+
+// TicketComplianceInput is the typed input for TicketComplianceTool.
+type TicketComplianceInput struct {
+	BranchName    string `json:"branch_name"`
+	PRDescription string `json:"pr_description"`
+	TicketContent string `json:"ticket_content"`
+	TicketID      string `json:"ticket_id"`
+	TicketSource  string `json:"ticket_source"`
+	Diff          string `json:"diff"`
+	CommitMsgs    string `json:"commit_messages"`
 }
 
 // Execute runs the ticket compliance tool.
 func (t *TicketComplianceTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		BranchName    string `json:"branch_name"`
-		PRDescription string `json:"pr_description"`
-		TicketContent string `json:"ticket_content"`
-		TicketID      string `json:"ticket_id"`
-		TicketSource  string `json:"ticket_source"`
-		Diff          string `json:"diff"`
-		CommitMsgs    string `json:"commit_messages"`
-	}
-
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[TicketComplianceInput]("TicketCompliance", input)
+	if err != nil {
+		return "", err
 	}
 
 	if params.TicketContent == "" {

@@ -21,40 +21,41 @@ func (StructuredEditTool) Description() string {
 	return "Apply search-and-replace edits to a file. Provide one or more SEARCH/REPLACE blocks. Each block finds exact text and replaces it. The SEARCH text must match the file contents exactly, including whitespace."
 }
 
-func (StructuredEditTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
-				"type":        "string",
-				"description": "Path to the file to edit",
-			},
-			"blocks": map[string]interface{}{
-				"type":        "array",
-				"description": "List of SEARCH/REPLACE blocks",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"search": map[string]interface{}{
-							"type":        "string",
-							"description": "Exact text to find. Must match the file exactly, including whitespace.",
-						},
-						"replace": map[string]interface{}{
-							"type":        "string",
-							"description": "Text to replace the search text with.",
-						},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (StructuredEditTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"path": {Type: "string", Description: "Path to the file to edit"},
+			"blocks": {
+				Type:        "array",
+				Description: "List of SEARCH/REPLACE blocks",
+				Items: &SchemaProperty{
+					Type: "object",
+					Properties: map[string]SchemaProperty{
+						"search":  {Type: "string", Description: "Exact text to find. Must match the file exactly, including whitespace."},
+						"replace": {Type: "string", Description: "Text to replace the search text with."},
 					},
-					"required": []string{"search", "replace"},
+					Required: []string{"search", "replace"},
 				},
 			},
-			"auto_format": map[string]interface{}{
-				"type":        "boolean",
-				"description": "If true, ignore insignificant whitespace differences when matching (default: false)",
-			},
+			"auto_format": {Type: "boolean", Description: "If true, ignore insignificant whitespace differences when matching (default: false)"},
 		},
-		"required": []string{"path", "blocks"},
+		Required: []string{"path", "blocks"},
 	}
 }
+
+func (StructuredEditTool) Parameters() map[string]interface{} {
+	return structuredEditSchema.ToJSONSchema()
+}
+
+// structuredEditSchema is the single source of truth for StructuredEdit's input schema.
+var structuredEditSchema = StructuredEditTool{}.Schema()
+
+// StructuredEditInput is the typed input for StructuredEditTool.
+// Aliased from the legacy unexported name.
+type StructuredEditInput = structuredEditInput
 
 type structuredEditInput struct {
 	Path       string               `json:"path"`
@@ -68,11 +69,10 @@ type searchReplaceBlock struct {
 }
 
 func (s StructuredEditTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p structuredEditInput
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[structuredEditInput]("StructuredEdit", input)
+	if err != nil {
+		return "", err
 	}
-
 	if p.Path == "" {
 		return "", fmt.Errorf("path is required")
 	}

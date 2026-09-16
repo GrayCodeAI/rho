@@ -994,3 +994,100 @@ func TestRefactorSchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [action file]", RefactorTool{}.Parameters()["required"])
 	}
 }
+
+func TestSQLSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = SQLTool{}
+	props := schemaProps(t, SQLTool{}.Parameters())
+	enum, ok := props["driver"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "sqlite" || enum[2] != "mysql" {
+		t.Fatalf("driver enum = %v, want 3 options", props["driver"])
+	}
+	req, _ := SQLTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "dsn" || req[1] != "query" {
+		t.Fatalf("required = %v, want [dsn query]", SQLTool{}.Parameters()["required"])
+	}
+}
+
+func TestStructuredEditSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = StructuredEditTool{}
+	props := schemaProps(t, StructuredEditTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	blocks := props["blocks"].(map[string]interface{})
+	if blocks["type"] != "array" {
+		t.Fatalf("blocks type = %v, want array", blocks["type"])
+	}
+	items := blocks["items"].(map[string]interface{})
+	itemReq, ok := items["required"].([]string)
+	if !ok || len(itemReq) != 2 || itemReq[0] != "search" || itemReq[1] != "replace" {
+		t.Fatalf("items required = %v, want [search replace]", items["required"])
+	}
+	req, _ := StructuredEditTool{}.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "path" || req[1] != "blocks" {
+		t.Fatalf("required = %v, want [path blocks]", StructuredEditTool{}.Parameters()["required"])
+	}
+}
+
+func TestVerifyPlanExecutionSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = VerifyPlanExecutionTool{}
+	props := schemaProps(t, VerifyPlanExecutionTool{}.Parameters())
+	steps := props["plan_steps"].(map[string]interface{})
+	if steps["type"] != "array" {
+		t.Fatalf("plan_steps type = %v, want array", steps["type"])
+	}
+	itemProps := steps["items"].(map[string]interface{})["properties"].(map[string]interface{})
+	if itemProps["description"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("description type wrong")
+	}
+	if itemProps["expected"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("expected type wrong")
+	}
+	req, _ := VerifyPlanExecutionTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "plan_steps" {
+		t.Fatalf("required = %v, want [plan_steps]", VerifyPlanExecutionTool{}.Parameters()["required"])
+	}
+}
+
+func TestWorkflowSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = WorkflowTool{}
+	props := schemaProps(t, WorkflowTool{}.Parameters())
+	if props["workflow"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("workflow type wrong")
+	}
+	if props["args"].(map[string]interface{})["type"] != "object" {
+		t.Fatal("args type wrong")
+	}
+	req, _ := WorkflowTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "workflow" {
+		t.Fatalf("required = %v, want [workflow]", WorkflowTool{}.Parameters()["required"])
+	}
+}
+
+func TestCodeGenSchemaProvider(t *testing.T) {
+	var inter SchemaProvider = (&CodeGenTool{})
+	_ = inter
+	props := schemaProps(t, (&CodeGenTool{}).Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 4 || enum[0] != "generate" || enum[3] != "suggest" {
+		t.Fatalf("action enum = %v, want 4 options", props["action"])
+	}
+	req, _ := (&CodeGenTool{}).Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", (&CodeGenTool{}).Parameters()["required"])
+	}
+}
+
+func TestTicketComplianceSchemaProvider(t *testing.T) {
+	var inter SchemaProvider = (&TicketComplianceTool{})
+	_ = inter
+	props := schemaProps(t, (&TicketComplianceTool{}).Parameters())
+	enum, ok := props["ticket_source"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "github" || enum[2] != "linear" {
+		t.Fatalf("ticket_source enum = %v, want 3 options", props["ticket_source"])
+	}
+	req, _ := (&TicketComplianceTool{}).Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "ticket_content" || req[1] != "diff" {
+		t.Fatalf("required = %v, want [ticket_content diff]", (&TicketComplianceTool{}).Parameters()["required"])
+	}
+}
