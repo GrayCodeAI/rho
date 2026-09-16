@@ -25,34 +25,30 @@ func (DebuggerTool) Description() string {
 Prefer this over adding print statements when you need to understand runtime state.`
 }
 
-func (DebuggerTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"description": "Action: breakpoint, run, inspect, step, continue, stack",
-				"enum":        []string{"breakpoint", "run", "inspect", "step", "continue", "stack"},
-			},
-			"file": map[string]interface{}{
-				"type":        "string",
-				"description": "File path (for breakpoint action)",
-			},
-			"line": map[string]interface{}{
-				"type":        "integer",
-				"description": "Line number (for breakpoint action)",
-			},
-			"expression": map[string]interface{}{
-				"type":        "string",
-				"description": "Expression to evaluate (for inspect action)",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (DebuggerTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":     {Type: "string", Enum: []interface{}{"breakpoint", "run", "inspect", "step", "continue", "stack"}, Description: "Action: breakpoint, run, inspect, step, continue, stack"},
+			"file":       {Type: "string", Description: "File path (for breakpoint action)"},
+			"line":       {Type: "integer", Description: "Line number (for breakpoint action)"},
+			"expression": {Type: "string", Description: "Expression to evaluate (for inspect action)"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
-// debugParams holds the parsed input parameters.
-type debugParams struct {
+func (DebuggerTool) Parameters() map[string]interface{} {
+	return debuggerSchema.ToJSONSchema()
+}
+
+// debuggerSchema is the single source of truth for Debugger's input schema.
+var debuggerSchema = DebuggerTool{}.Schema()
+
+// DebuggerInput is the typed input for DebuggerTool.
+type DebuggerInput struct {
 	Action     string `json:"action"`
 	File       string `json:"file"`
 	Line       int    `json:"line"`
@@ -60,9 +56,9 @@ type debugParams struct {
 }
 
 func (DebuggerTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p debugParams
-	if err := json.Unmarshal(input, &p); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	p, err := DecodeInput[DebuggerInput]("Debug", input)
+	if err != nil {
+		return "", err
 	}
 
 	if err := validateDebugParams(p); err != nil {
@@ -88,7 +84,7 @@ func (DebuggerTool) Execute(ctx context.Context, input json.RawMessage) (string,
 }
 
 // validateDebugParams ensures required fields are present for each action.
-func validateDebugParams(p debugParams) error {
+func validateDebugParams(p DebuggerInput) error {
 	switch p.Action {
 	case "":
 		return fmt.Errorf("action is required")
@@ -126,7 +122,7 @@ func detectDebugLanguage(file string) string {
 	}
 }
 
-func debugBreakpoint(ctx context.Context, p debugParams) (string, error) {
+func debugBreakpoint(ctx context.Context, p DebuggerInput) (string, error) {
 	lang := detectDebugLanguage(p.File)
 	switch lang {
 	case "go":
@@ -148,7 +144,7 @@ func debugBreakpoint(ctx context.Context, p debugParams) (string, error) {
 	}
 }
 
-func debugRun(ctx context.Context, p debugParams) (string, error) {
+func debugRun(ctx context.Context, p DebuggerInput) (string, error) {
 	file := p.File
 	if file == "" {
 		file = "."
@@ -184,7 +180,7 @@ func debugRun(ctx context.Context, p debugParams) (string, error) {
 	}
 }
 
-func debugInspect(ctx context.Context, p debugParams) (string, error) {
+func debugInspect(ctx context.Context, p DebuggerInput) (string, error) {
 	// For Go, use dlv eval.
 	cmd := exec.CommandContext(ctx, "dlv", "eval", p.Expression) // #nosec G204 -- debugger/interpreter invocation with file path or expression from tool params
 	out, err := cmd.CombinedOutput()

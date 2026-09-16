@@ -24,30 +24,38 @@ func (DependencyAuditTool) Description() string {
 	return "Audit dependency integrity and report outdated packages without installing or changing anything. Supports Go, npm, Python, and Cargo projects with structured results."
 }
 
-func (DependencyAuditTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"check", "outdated", "all"},
-				"description": "check validates dependency integrity; outdated reports available updates; all runs both.",
-			},
-			"path":            map[string]interface{}{"type": "string", "description": "Project directory (default: session working directory)."},
-			"timeout_seconds": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 300, "description": "Per-command timeout (default 60 seconds)."},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (DependencyAuditTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":          {Type: "string", Enum: []interface{}{"check", "outdated", "all"}, Description: "check validates dependency integrity; outdated reports available updates; all runs both."},
+			"path":            {Type: "string", Description: "Project directory (default: session working directory)."},
+			"timeout_seconds": {Type: "integer", Minimum: 1, Maximum: 300, Description: "Per-command timeout (default 60 seconds)."},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
+func (DependencyAuditTool) Parameters() map[string]interface{} {
+	return dependencyAuditSchema.ToJSONSchema()
+}
+
+// dependencyAuditSchema is the single source of truth for DependencyAudit's input schema.
+var dependencyAuditSchema = DependencyAuditTool{}.Schema()
+
+// DependencyAuditInput is the typed input for DependencyAuditTool.
+type DependencyAuditInput struct {
+	Action         string `json:"action"`
+	Path           string `json:"path"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
 func (DependencyAuditTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var params struct {
-		Action         string `json:"action"`
-		Path           string `json:"path"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
+	params, err := DecodeInput[DependencyAuditInput]("DependencyAudit", input)
+	if err != nil {
+		return "", err
 	}
 	params.Action = strings.ToLower(strings.TrimSpace(params.Action))
 	if params.Action != "check" && params.Action != "outdated" && params.Action != "all" {
@@ -67,7 +75,7 @@ func (DependencyAuditTool) Execute(ctx context.Context, input json.RawMessage) (
 			root, _ = os.Getwd()
 		}
 	}
-	root, err := filepath.Abs(root)
+	root, err = filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve project path: %w", err)
 	}

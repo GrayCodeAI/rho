@@ -478,3 +478,101 @@ func TestAppVerifySchemaProvider(t *testing.T) {
 		t.Fatalf("required = %v, want [action]", AppVerifyTool{}.Parameters()["required"])
 	}
 }
+
+func TestRequestCredentialSchemaProvider(t *testing.T) {
+	compat := &RequestCredentialTool{}
+	var _ SchemaProvider = compat
+	props := schemaProps(t, compat.Parameters())
+	if props["credential"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("credential type wrong")
+	}
+	if props["reason"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("reason type wrong")
+	}
+	req, _ := compat.Parameters()["required"].([]string)
+	if len(req) != 2 || req[0] != "credential" || req[1] != "reason" {
+		t.Fatalf("required = %v, want [credential reason]", compat.Parameters()["required"])
+	}
+}
+
+func TestDebuggerSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = DebuggerTool{}
+	props := schemaProps(t, DebuggerTool{}.Parameters())
+	action, ok := props["action"].(map[string]interface{})
+	if !ok || action["type"] != "string" {
+		t.Fatalf("action prop = %v, want string", props["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok || len(enum) != 6 || enum[0] != "breakpoint" || enum[5] != "stack" {
+		t.Fatalf("action enum = %v, want 6 options", action["enum"])
+	}
+	req, _ := DebuggerTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", DebuggerTool{}.Parameters()["required"])
+	}
+}
+
+func TestDependencyAuditSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = DependencyAuditTool{}
+	props := schemaProps(t, DependencyAuditTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 3 || enum[0] != "check" {
+		t.Fatalf("action enum = %v, want [check outdated all]", props["action"])
+	}
+	ts := props["timeout_seconds"].(map[string]interface{})
+	if ts["minimum"] != 1 || ts["maximum"] != 300 {
+		t.Fatalf("timeout_seconds bounds = %v/%v, want 1/300", ts["minimum"], ts["maximum"])
+	}
+	req, _ := DependencyAuditTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", DependencyAuditTool{}.Parameters()["required"])
+	}
+}
+
+func TestGitSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = GitTool{}
+	props := schemaProps(t, GitTool{}.Parameters())
+	if props["subcommand"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("subcommand type wrong")
+	}
+	args, ok := props["args"].(map[string]interface{})
+	if !ok || args["type"] != "array" {
+		t.Fatalf("args prop = %v, want array", props["args"])
+	}
+	if args["items"].(map[string]interface{})["type"] != "string" {
+		t.Fatalf("args items = %v, want string", args["items"])
+	}
+	req, _ := GitTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "subcommand" {
+		t.Fatalf("required = %v, want [subcommand]", GitTool{}.Parameters()["required"])
+	}
+}
+
+func TestGitHubSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = GitHubTool{}
+	props := schemaProps(t, GitHubTool{}.Parameters())
+	enum, ok := props["action"].(map[string]interface{})["enum"].([]interface{})
+	if !ok || len(enum) != 9 {
+		t.Fatalf("action enum = %v, want 9 options", props["action"])
+	}
+	l := props["limit"].(map[string]interface{})
+	if l["minimum"] != 1 || l["maximum"] != 50 {
+		t.Fatalf("limit bounds = %v/%v, want 1/50", l["minimum"], l["maximum"])
+	}
+	req, _ := GitHubTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "action" {
+		t.Fatalf("required = %v, want [action]", GitHubTool{}.Parameters()["required"])
+	}
+}
+
+func TestImportOrganizerSchemaProvider(t *testing.T) {
+	var _ SchemaProvider = ImportOrganizerTool{}
+	props := schemaProps(t, ImportOrganizerTool{}.Parameters())
+	if props["path"].(map[string]interface{})["type"] != "string" {
+		t.Fatal("path type wrong")
+	}
+	req, _ := ImportOrganizerTool{}.Parameters()["required"].([]string)
+	if len(req) != 1 || req[0] != "path" {
+		t.Fatalf("required = %v, want [path]", ImportOrganizerTool{}.Parameters()["required"])
+	}
+}
