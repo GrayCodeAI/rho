@@ -10,40 +10,52 @@ import (
 // VerifyPlanExecutionTool checks whether a plan's steps have been executed correctly.
 type VerifyPlanExecutionTool struct{}
 
+// VerifyPlanExecutionInput is the typed input for VerifyPlanExecutionTool.
+type VerifyPlanExecutionInput struct {
+	PlanSteps []struct {
+		Description string `json:"description"`
+		Expected    string `json:"expected"`
+	} `json:"plan_steps"`
+}
+
 func (VerifyPlanExecutionTool) Name() string      { return "VerifyPlanExecution" }
 func (VerifyPlanExecutionTool) Aliases() []string { return []string{"verify_plan_execution"} }
 func (VerifyPlanExecutionTool) Description() string {
 	return "Verify that a plan's steps have been executed correctly by checking task completion and file changes"
 }
 
-func (VerifyPlanExecutionTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"plan_steps": map[string]interface{}{
-				"type": "array",
-				"items": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"description": map[string]interface{}{"type": "string"},
-						"expected":    map[string]interface{}{"type": "string"},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (VerifyPlanExecutionTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"plan_steps": {
+				Type:        "array",
+				Description: "Steps to verify with their expected outcomes",
+				Items: &SchemaProperty{
+					Type: "object",
+					Properties: map[string]SchemaProperty{
+						"description": {Type: "string"},
+						"expected":    {Type: "string"},
 					},
 				},
-				"description": "Steps to verify with their expected outcomes",
 			},
 		},
-		"required": []string{"plan_steps"},
+		Required: []string{"plan_steps"},
 	}
 }
 
+func (VerifyPlanExecutionTool) Parameters() map[string]interface{} {
+	return verifyPlanSchema.ToJSONSchema()
+}
+
+// verifyPlanSchema is the single source of truth for VerifyPlanExecution's input schema.
+var verifyPlanSchema = VerifyPlanExecutionTool{}.Schema()
+
 func (VerifyPlanExecutionTool) Execute(_ context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		PlanSteps []struct {
-			Description string `json:"description"`
-			Expected    string `json:"expected"`
-		} `json:"plan_steps"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[VerifyPlanExecutionInput]("VerifyPlanExecution", input)
+	if err != nil {
 		return "", err
 	}
 	if len(p.PlanSteps) == 0 {

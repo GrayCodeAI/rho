@@ -31,35 +31,41 @@ type WorkflowStep struct {
 // WorkflowTool executes scripted workflows.
 type WorkflowTool struct{}
 
+// WorkflowInput is the typed input for WorkflowTool.
+type WorkflowInput struct {
+	Workflow string         `json:"workflow"`
+	Args     map[string]any `json:"args"`
+}
+
 func (WorkflowTool) Name() string      { return "Workflow" }
 func (WorkflowTool) Aliases() []string { return []string{"workflow"} }
 func (WorkflowTool) Description() string {
 	return "Execute a scripted workflow"
 }
 
-func (WorkflowTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"workflow": map[string]interface{}{
-				"type":        "string",
-				"description": "Name of the workflow to execute",
-			},
-			"args": map[string]interface{}{
-				"type":        "object",
-				"description": "Arguments to pass to the workflow",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (WorkflowTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"workflow": {Type: "string", Description: "Name of the workflow to execute"},
+			"args":     {Type: "object", Description: "Arguments to pass to the workflow"},
 		},
-		"required": []string{"workflow"},
+		Required: []string{"workflow"},
 	}
 }
 
+func (WorkflowTool) Parameters() map[string]interface{} {
+	return workflowSchema.ToJSONSchema()
+}
+
+// workflowSchema is the single source of truth for Workflow's input schema.
+var workflowSchema = WorkflowTool{}.Schema()
+
 func (WorkflowTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var p struct {
-		Workflow string         `json:"workflow"`
-		Args     map[string]any `json:"args"`
-	}
-	if err := json.Unmarshal(input, &p); err != nil {
+	p, err := DecodeInput[WorkflowInput]("Workflow", input)
+	if err != nil {
 		return "", err
 	}
 	if p.Workflow == "" {

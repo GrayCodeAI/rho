@@ -229,37 +229,31 @@ func (t *CodeGenTool) Description() string {
 	return "Generate common code patterns from templates. Supports Go, Python, and TypeScript templates for handlers, tests, middleware, CRUD operations, and more."
 }
 
-func (t *CodeGenTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"action": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"generate", "list", "preview", "suggest"},
-				"description": "Action to perform",
-			},
-			"template": map[string]interface{}{
-				"type":        "string",
-				"description": "Template name (e.g., go-handler, py-fastapi-endpoint)",
-			},
-			"variables": map[string]interface{}{
-				"type":        "object",
-				"description": "Template variables as key-value pairs",
-			},
-			"language": map[string]interface{}{
-				"type":        "string",
-				"description": "Filter templates by language (go, python, typescript)",
-			},
-			"description": map[string]interface{}{
-				"type":        "string",
-				"description": "Natural language description for template suggestion",
-			},
+// Schema returns the typed input schema. Parameters() delegates to it so the
+// two cannot diverge.
+func (t *CodeGenTool) Schema() ToolSchema {
+	return ToolSchema{
+		Type: "object",
+		Properties: map[string]SchemaProperty{
+			"action":      {Type: "string", Enum: []interface{}{"generate", "list", "preview", "suggest"}, Description: "Action to perform"},
+			"template":    {Type: "string", Description: "Template name (e.g., go-handler, py-fastapi-endpoint)"},
+			"variables":   {Type: "object", Description: "Template variables as key-value pairs"},
+			"language":    {Type: "string", Description: "Filter templates by language (go, python, typescript)"},
+			"description": {Type: "string", Description: "Natural language description for template suggestion"},
 		},
-		"required": []string{"action"},
+		Required: []string{"action"},
 	}
 }
 
-type codeGenInput struct {
+func (t *CodeGenTool) Parameters() map[string]interface{} {
+	return codeGenSchema.ToJSONSchema()
+}
+
+// codeGenSchema is the single source of truth for CodeGen's input schema.
+var codeGenSchema = (&CodeGenTool{}).Schema()
+
+// CodeGenInput is the typed input for CodeGenTool.
+type CodeGenInput struct {
 	Action      string            `json:"action"`
 	Template    string            `json:"template"`
 	Variables   map[string]string `json:"variables"`
@@ -267,12 +261,14 @@ type codeGenInput struct {
 	Description string            `json:"description"`
 }
 
-func (t *CodeGenTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	var in codeGenInput
-	if err := json.Unmarshal(input, &in); err != nil {
-		return "", fmt.Errorf("invalid input: %w", err)
-	}
+// codeGenInput is an unexported alias for backward compatibility with tests.
+type codeGenInput = CodeGenInput
 
+func (t *CodeGenTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	in, err := DecodeInput[CodeGenInput]("CodeGen", input)
+	if err != nil {
+		return "", err
+	}
 	switch in.Action {
 	case "generate":
 		if in.Template == "" {
