@@ -53,3 +53,8 @@ rho-sec105b.log
 
 # Compiled Go test binaries
 *.test
+
+# Agent instructions: this repo is AGENTS.md-only.
+# `gitnexus analyze` regenerates a root CLAUDE.md that would shadow AGENTS.md
+# for tools that prefer it; keep the regenerated copy out of git.
+/CLAUDE.md
