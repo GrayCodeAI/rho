@@ -1,13 +1,10 @@
 # GrayCode ecosystem wiring
 
-> NOTE (2026-09-04): the `eagle` repository has been removed; its contracts
-> were vendored into rho's `internal/contracts` and `ecosystem.yaml`
-> no longer lists it. Diagrams below predate the removal.
+> **STALE (2026-09-18):** Diagrams below predate `eagle` removal (2026-09-04) and list 14 repos / 6 engines. Canonical inventory is `ecosystem.yaml` (now 6 repos: `rho`, `flux`, `graycode-skills`, `graycode-platform`, `rover`, `across`). Use that for workspace/boundary checks. See `PLAN.md` at eco root for remediation.
 
-This document is the implementation contract for the 14 repositories in the
-GrayCodeAI ecosystem. `ecosystem.yaml` is the canonical machine-readable
-inventory; generated workspaces, boundary checks, release parity, and Owl's
-repository catalog derive from it.
+> NOTE (2026-09-04): `eagle` contracts vendored into `rho/internal/contracts`.
+
+This document is the historical implementation contract. `ecosystem.yaml` is the canonical machine-readable inventory.
 
 ## Current state before this change
 

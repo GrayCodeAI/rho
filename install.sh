@@ -13,6 +13,18 @@ fi
 REPO="GrayCodeAI/rho"
 BINARY="rho"
 
+# Version pin: --version <ver> or RHO_VERSION env (e.g. 0.1.0 or v0.1.0)
+VERSION_PIN="${RHO_VERSION:-}"
+if [ "$1" = "--version" ]; then
+  VERSION_PIN="$2"
+  shift 2
+elif [ "$3" = "--version" ]; then
+  # handle --prefix <dir> --version <ver> order
+  VERSION_PIN="$4"
+  set -- "$1" "$2"
+fi
+VERSION_PIN=$(printf '%s' "$VERSION_PIN" | sed 's/^v//')
+
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 case "$ARCH" in
@@ -31,10 +43,14 @@ case "$OS" in
     ;;
 esac
 
-LATEST=$(curl -fsSL --proto '=https' --tlsv1.2 "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
-if [ -z "$LATEST" ]; then
-  echo "Error: could not determine latest version"
-  exit 1
+if [ -n "$VERSION_PIN" ]; then
+  LATEST="$VERSION_PIN"
+else
+  LATEST=$(curl -fsSL --proto '=https' --tlsv1.2 "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+  if [ -z "$LATEST" ]; then
+    echo "Error: could not determine latest version"
+    exit 1
+  fi
 fi
 
 ARCHIVE_NAME="${BINARY}_${LATEST}_${OS}_${ARCH}.${ARCHIVE_EXT}"
