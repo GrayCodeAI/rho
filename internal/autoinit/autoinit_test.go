@@ -174,11 +174,11 @@ func TestHasContext(t *testing.T) {
 	if HasContext(root) {
 		t.Error("empty dir should not have context")
 	}
-	if err := os.WriteFile(filepath.Join(root, "CLAUDE.md"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "CONTEXT.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !HasContext(root) {
-		t.Error("dir with CLAUDE.md should have context")
+		t.Error("dir with CONTEXT.md should have context")
 	}
 }
 

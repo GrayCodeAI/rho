@@ -1,6 +1,6 @@
 // Package autoinit performs a one-time, automatic codebase-analysis pass the
 // first time rho runs in a project that has no context files (AGENTS.md /
-// RHO.md / CLAUDE.md). It mirrors the behaviour of the `init-deep` skill but
+// RHO.md / CONTEXT.md). It mirrors the behaviour of the `init-deep` skill but
 // is gated so it runs at most once per project and can be disabled entirely.
 //
 // The package is intentionally additive and self-contained: it only inspects
@@ -35,7 +35,7 @@ const disableEnv = "RHO_DISABLE_AUTO_INIT"
 // contextFiles are the project-level context files whose presence means the
 // project already has context and auto-init should be skipped. This matches
 // the convention files recognized elsewhere in rho.
-var contextFiles = []string{"AGENTS.md", "RHO.md", "CLAUDE.md", "CONTEXT.md"}
+var contextFiles = []string{"AGENTS.md", "RHO.md", "CONTEXT.md"}
 
 // Runner performs the actual codebase analysis for a project rooted at root.
 // It is supplied by the caller so this package carries no dependency on the

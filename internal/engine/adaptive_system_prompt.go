@@ -286,7 +286,7 @@ func DefaultSections(ctx PromptBuildContext) []PromptSection {
 		},
 		{
 			Name:     "project",
-			Content:  "Follow project-specific conventions documented in AGENTS.md and CLAUDE.md. Respect existing code style, patterns, and architecture.",
+			Content:  "Follow project-specific conventions documented in AGENTS.md. Respect existing code style, patterns, and architecture.",
 			Priority: 2,
 			Conditional: func() bool {
 				return ctx.ProjectType != ""
