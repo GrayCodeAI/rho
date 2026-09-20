@@ -18,7 +18,7 @@ func TestYOLOConfirm_PendingConsumesNextInput(t *testing.T) {
 	if next.pendingYOLOConfirm {
 		t.Error("pendingYOLOConfirm should be cleared after any submission")
 	}
-	if next.session.PermSvc().Autonomy() == safety.AutonomyYOLO {
+	if next.session.PermSvc().RuntimeState().Autonomy == safety.AutonomyYOLO {
 		t.Error("autonomy should NOT be YOLO after a non-matching confirmation")
 	}
 	if len(next.messages) == 0 || !strings.Contains(next.messages[len(next.messages)-1].content, "cancelled") {
@@ -35,8 +35,8 @@ func TestYOLOConfirm_ExactTokenEnables(t *testing.T) {
 	if next.pendingYOLOConfirm {
 		t.Error("pendingYOLOConfirm should be cleared after confirmation")
 	}
-	if next.session.PermSvc().Autonomy() != safety.AutonomyYOLO {
-		t.Errorf("autonomy = %v, want YOLO after matching confirmation", next.session.PermSvc().Autonomy())
+	if next.session.PermSvc().RuntimeState().Autonomy != safety.AutonomyYOLO {
+		t.Errorf("autonomy = %v, want YOLO after matching confirmation", next.session.PermSvc().RuntimeState().Autonomy)
 	}
 }
 
@@ -46,7 +46,7 @@ func TestYOLOConfirm_CaseInsensitive(t *testing.T) {
 
 	m.input.SetValue(strings.ToUpper(yoloConfirmToken))
 	next, _ := m.submitUserMessage()
-	if next.session.PermSvc().Autonomy() != safety.AutonomyYOLO {
+	if next.session.PermSvc().RuntimeState().Autonomy != safety.AutonomyYOLO {
 		t.Error("confirmation token should match case-insensitively")
 	}
 }
@@ -57,7 +57,7 @@ func TestYOLOConfirm_DoesNotLeakIntoNormalSubmit(t *testing.T) {
 
 	m.input.SetValue(yoloConfirmToken)
 	next, _ := m.submitUserMessage()
-	if next.session.PermSvc().Autonomy() == safety.AutonomyYOLO {
+	if next.session.PermSvc().RuntimeState().Autonomy == safety.AutonomyYOLO {
 		t.Error("autonomy should not change without a pending confirmation")
 	}
 }

@@ -19,7 +19,7 @@ plans in `docs/plans/competitive-gap-*.md` and the extra fixes they surfaced.
 
 | Repo | Role | Key strengths |
 |---|---|---|
-| rho | Product face (Go, Bubble Tea v2) | 120+ tools, Docker fail-closed sandbox, `/autonomy`+`/spec` gates, `mission` multi-agent, execution-graph export, AST repomap + Harrier memory, MCP/LSP |
+| rho | Product face (Go, Bubble Tea v2) | 120+ tools, host permission/path controls, `/autonomy`+`/spec` gates, `mission` multi-agent, execution-graph export, AST repomap + Harrier memory, MCP/LSP |
 | flux | Provider engine facade | 22 gateways, routing/retry/caching/compaction, OpenAI-compat proxy, model catalog |
 | graycode-platform | Optional cloud/BFF plane | web + identity BFF + control-plane worker (not a runtime dep) |
 | graycode-skills | Skill marketplace | 14,015 skills, 27 categories, SKILL.md frontmatter + validation |
@@ -30,11 +30,11 @@ Legend: ✅ implemented (this branch) · 🟡 partial / surfaced · ⬜ not yet.
 
 | # | Paper (arXiv) | Technique | Coverage | Action |
 |---|---|---|---|---|
-| 1 | SWE-bench (2310.06770) | repo-level, test-verified eval | 🟡 `internal/feature/eval` + `make bench` exist | ✅ published `docs/BENCHMARKS.md` (Gap-04) |
+| 1 | SWE-bench (2310.06770) | repo-level, test-verified eval | 🟡 `internal/features/eval` + `make bench` exist | ✅ published `docs/BENCHMARKS.md` (Gap-04) |
 | 2 | ReAct (2210.03629) | thought→action→observation loop | 🟡 `/autonomy`+`/spec`, visual diff | 🟡 surfaced; no explicit trace log |
-| 3 | CodeAct (2402.01030) | executable code as action space | 🟡 Docker Bash tool | 🟡 already container-executed |
+| 3 | CodeAct (2402.01030) | executable code as action space | 🟡 permission-gated Bash tool | 🟡 host execution with policy checks |
 | 4 | SWE-agent (2405.15793) | agent-computer interface design | ✅ 120+ tool surface | ✅ kept |
-| 5 | OpenHands (2407.16741) | sandboxed event-stream, multi-agent, eval | ✅ Docker sandbox + `mission` + eval | ✅ kept |
+| 5 | OpenHands (2407.16741) | event-stream, multi-agent, eval | ✅ event log + `mission` + eval | ✅ kept |
 | 6 | Reflexion (2303.11366) | verbal self-reflection in memory | 🟡 Harrier memory + compaction | ✅ `ReflexionStore` records failure reflexions per mission (this branch) |
 | 7 | Self-Refine (2303.17651) | generate→critique→refine | ✅ `ReadOnlyValidationWorker` (read-only critic agent) | ✅ already present |
 | 8 | CoT (2201.11903) | reasoning traces | 🟡 `/spec` planning | 🟡 present |
@@ -57,7 +57,7 @@ From `docs/COMPETITIVE.md` (10 AI CLIs + 6 dev CLIs + 4 terminals):
 
 | Competitor lesson | Our response (this branch) |
 |---|---|
-| Codex/Gemini onboarding clarity | ✅ Gap-01 ordered Docker checklist in `path`/`preflight`/`doctor` + README |
+| Codex/Gemini onboarding clarity | ✅ Gap-01 ordered host-permission checklist in `path`/`preflight`/`doctor` + README |
 | OpenCode/herdr multi-session + share | ✅ Gap-02 `sessions` shows model/export path; picker shows deeplink + export path |
 | Ghostty/kitty terminal image display | ✅ Gap-03 Kitty-graphics emit with probe + fallback |
 | ripgrep/fzf published benchmarks | ✅ Gap-04 `docs/BENCHMARKS.md` with measured numbers |
@@ -109,10 +109,10 @@ unverified here.
 - Gap tests: `go test ./cmd/ -run 'TestPath|TestPreflight|TestDoctor|TestImage|TestSession'`,
   `go test ./internal/tui/...`, `go test ./internal/session/`,
   `go test ./internal/tool/ -run 'TestComputerUse|TestMediaGeneration'`,
-  `go test ./internal/config/ -run 'DeveloperPath|Sandbox'` — all pass.
+  `go test ./internal/config/ -run 'DeveloperPath'` — all pass.
 - Router facade: `go test ./engine/ -run 'TestEngineGenerateImage|TestEngineTranscribe'` — pass.
 - Reflexion (new): `go test ./internal/multiagent/ -run 'TestReflect|TestReflexionStore|TestAttemptFromBranch'` — pass; full `internal/multiagent` suite green.
-- Self-consistency (new): `go test ./internal/intelligence/consistency/` + `./internal/feature/eval/ -run TestRunConsensus` — pass.
+- Self-consistency (new): `go test ./internal/intelligence/consistency/` + `./internal/features/eval/ -run TestRunConsensus` — pass.
 - Tree-search (new): `go test ./internal/planning/` — pass.
 - Full build: `go build ./...` exit 0 (with local stubs).
 - Benchmarks: `docs/BENCHMARKS.md` (session save/load, repomap size/tokens).

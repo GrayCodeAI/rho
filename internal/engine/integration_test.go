@@ -71,8 +71,8 @@ func TestTrustTiersAndSpecStageRoundTrip(t *testing.T) {
 	tiers := []safety.AutonomyLevel{safety.AutonomySupervised, safety.AutonomyBasic, safety.AutonomySemi, safety.AutonomyFull, safety.AutonomyYOLO}
 	for _, tier := range tiers {
 		sess.PermSvc().SetAutonomy(tier)
-		if sess.PermSvc().Autonomy() != tier {
-			t.Errorf("expected autonomy %v, got %v", tier, sess.PermSvc().Autonomy())
+		if sess.PermSvc().RuntimeState().Autonomy != tier {
+			t.Errorf("expected autonomy %v, got %v", tier, sess.PermSvc().RuntimeState().Autonomy)
 		}
 	}
 

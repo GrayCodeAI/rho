@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GrayCodeAI/rho/internal/feature"
+	"github.com/GrayCodeAI/rho/internal/features"
 )
 
 // requestIDKey is the context key for the request ID.

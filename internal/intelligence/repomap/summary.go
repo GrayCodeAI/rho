@@ -367,7 +367,7 @@ func InferPurpose(pkgPath string, symbols []string) string {
 		{"log", "", "Logging"},
 		{"metric", "", "Metrics and telemetry"},
 		{"session", "", "Session management"},
-		{"sandbox", "", "Sandboxed execution"},
+		{"changes", "", "Pending file changes and review"},
 		{"permission", "", "Permission and access control"},
 		{"planner", "", "Planning and task decomposition"},
 		{"memory", "", "Persistent memory"},

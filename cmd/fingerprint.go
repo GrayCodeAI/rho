@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/GrayCodeAI/rho/internal/feature/fingerprint"
+	"github.com/GrayCodeAI/rho/internal/features/fingerprint"
 	"github.com/spf13/cobra"
 )
 

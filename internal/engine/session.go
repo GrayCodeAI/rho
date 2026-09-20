@@ -112,8 +112,7 @@ type Session struct {
 	// (Trajectory, LintLoop, TestLoop, FileMentions, Files, Snapshots).
 	// For those, keep reading the legacy field — they're
 	// populated at session construction and don't have a setter.
-	//   Autonomy       -> s.PermSvc().Autonomy()
-	//   Sandbox        -> s.Tools().Sandbox()
+	//   Autonomy       -> s.PermSvc().RuntimeState().Autonomy
 	//   Plan           -> s.Plan (legacy field; not yet on a sub-service)
 	//   Beliefs        -> s.LifecycleSvc().Beliefs()
 	//   Critic         -> s.LifecycleSvc().Critic()
@@ -200,6 +199,31 @@ func NewSessionWithClient(chat ChatClient, provider, model, systemPrompt string,
 		Metrics:           metrics.NewRegistry(),
 	})
 	s.perms = NewPermissionService(log)
+	if registry != nil {
+		registered := registry.PrimaryTools()
+		known := make([]string, 0, len(registered))
+		untrusted := make([]string, 0)
+		for _, registeredTool := range registered {
+			if registeredTool != nil {
+				known = append(known, registeredTool.Name())
+				isUntrusted := false
+				if external, ok := registeredTool.(tool.UntrustedTool); ok {
+					isUntrusted = external.Untrusted()
+				}
+				if isUntrusted {
+					untrusted = append(untrusted, registeredTool.Name())
+				}
+				if aliased, ok := registeredTool.(tool.AliasedTool); ok {
+					known = append(known, aliased.Aliases()...)
+					if isUntrusted {
+						untrusted = append(untrusted, aliased.Aliases()...)
+					}
+				}
+			}
+		}
+		s.perms.SetKnownTools(known)
+		s.perms.SetUntrustedTools(untrusted)
+	}
 	s.life = NewLifecycleService(log)
 	s.memory = NewMemoryService(log)
 	s.persist = NewPersistenceService(log)

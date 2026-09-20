@@ -114,16 +114,12 @@ func (v PermissionVerdict) String() string {
 		v.Source, action, v.Risk, v.Confidence, v.Reason)
 }
 
-// GuardianDecision is a provider-neutral automatic permission review response.
-type GuardianDecision struct {
-	Allowed    bool    `json:"allowed"`
-	Reason     string  `json:"reason"`
-	Confidence float64 `json:"confidence"`
-}
-
 // PermissionRequest represents a user-facing approval request.
 type PermissionRequest struct {
 	ToolName string `json:"tool_name"`
 	ToolID   string `json:"tool_id,omitempty"`
 	Summary  string `json:"summary,omitempty"`
+	// Identity is the untruncated canonical action used for exact permission
+	// rules. Summary is presentation-sized and must not be used as identity.
+	Identity string `json:"identity,omitempty"`
 }

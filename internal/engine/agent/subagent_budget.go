@@ -29,14 +29,14 @@ var ModeToolAllowlist = map[SubAgentMode][]string{
 		"Grep",
 		"Glob",
 		"LS",
-		"Bash", // read-only commands only (enforced by sandbox)
+		"Bash", // read-only commands only (enforced by the permission pipeline)
 	},
 	SubAgentPlan: {
 		"Read",
 		"Grep",
 		"Glob",
 		"LS",
-		"Bash", // read-only commands only (enforced by sandbox)
+		"Bash", // read-only commands only (enforced by the permission pipeline)
 	},
 	SubAgentGeneral: {
 		"Read",

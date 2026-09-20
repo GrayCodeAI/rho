@@ -25,7 +25,7 @@ var harnessCmd = &cobra.Command{
   2. Feedback Sensors (linters, test suites, hooks)
   3. Task Understanding (spec clarity, acceptance criteria)
   4. Step Planning & Execution (execution graphs, step reproducibility)
-  5. Verification & Safeguards (safety checks, sandbox policy)
+  5. Verification & Safeguards (permission checks and policy)
 
 Generates self-contained HTML (report.html), Markdown (report.md), and JSON (findings.json).
 Use --fix to automatically repair missing AGENTS.md, skills, or spec directories.`,

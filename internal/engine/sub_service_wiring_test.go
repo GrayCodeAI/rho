@@ -37,11 +37,8 @@ func TestSession_NewSessionWithClient_WiresAllSubServices(t *testing.T) {
 	if s.PermSvc() == nil {
 		t.Fatal("PermSvc() should not be nil after NewSessionWithClient")
 	}
-	if s.PermSvc().Engine() == nil {
-		t.Error("PermSvc().Engine() should not be nil")
-	}
-	if s.PermSvc().Engine() == nil {
-		t.Error("PermSvc().Engine() should be initialized")
+	if s.PermSvc().Memory() == nil {
+		t.Error("PermSvc().Memory() should be initialized")
 	}
 
 	// LifecycleService owns limits, beliefs, backtrack, response cache, pipeline.

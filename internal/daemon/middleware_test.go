@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GrayCodeAI/rho/internal/feature"
+	"github.com/GrayCodeAI/rho/internal/features"
 	"github.com/GrayCodeAI/rho/internal/testutil"
 )
 

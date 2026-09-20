@@ -1,8 +1,12 @@
 package permissions
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/GrayCodeAI/rho/internal/permissions/stableid"
@@ -138,5 +142,93 @@ func TestStoreLoadEmptyAndMalformed(t *testing.T) {
 	bad := NewStableRuleStore(path)
 	if err := bad.Load(); err == nil {
 		t.Fatal("malformed file must error on Load")
+	}
+}
+
+func TestStoreMutationIsTransactionalOnPersistenceFailure(t *testing.T) {
+	s := newTempStore(t)
+	id, ok := s.Remember(stableid.KindCommand, "command\x00git status", "git status", stableid.Allow)
+	if !ok {
+		t.Fatal("initial remember failed")
+	}
+	// Point the store at a directory so the next atomic rename cannot succeed.
+	s.path = t.TempDir()
+	if nextID, ok := s.Remember(stableid.KindCommand, "command\x00git diff", "git diff", stableid.Allow); ok || nextID != 0 {
+		t.Fatal("remember must fail when persistence fails")
+	}
+	if len(s.List()) != 1 || s.List()[0].ID != id {
+		t.Fatalf("failed remember mutated in-memory state: %+v", s.List())
+	}
+	if s.Revoke(id) {
+		t.Fatal("revoke must fail when persistence fails")
+	}
+	if len(s.List()) != 1 {
+		t.Fatal("failed revoke mutated in-memory state")
+	}
+	if s.Reset() {
+		t.Fatal("reset must fail when persistence fails")
+	}
+	if len(s.List()) != 1 {
+		t.Fatal("failed reset mutated in-memory state")
+	}
+}
+
+func TestStoreSaveLeavesNoFixedTempFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stable-rules.json")
+	store := NewStableRuleStore(path)
+	if _, ok := store.Remember(stableid.KindCommand, "command\x00git status", "git status", stableid.Allow); !ok {
+		t.Fatal("remember failed")
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("fixed temp file should not exist, stat error=%v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".tmp-") {
+			t.Fatalf("temporary file was not cleaned up: %s", entry.Name())
+		}
+	}
+	reloaded := NewStableRuleStore(path)
+	if err := reloaded.Load(); err != nil {
+		t.Fatalf("load after atomic save: %v", err)
+	}
+	if got := reloaded.List(); len(got) != 1 || got[0].DisplayIdentity != "git status" {
+		t.Fatalf("loaded rules = %#v", got)
+	}
+}
+
+func TestStoreConcurrentWritersMergeUnderFileLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stable-rules.json")
+	const writers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for i := 0; i < writers; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			store := NewStableRuleStore(path)
+			canonical := "command\x00git status --" + strconv.Itoa(i)
+			if _, ok := store.Remember(stableid.KindCommand, canonical, canonical, stableid.Allow); !ok {
+				errs <- fmt.Errorf("writer %d failed", i)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	loaded := NewStableRuleStore(path)
+	if err := loaded.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(loaded.List()); got != writers {
+		t.Fatalf("merged rule count = %d, want %d", got, writers)
 	}
 }

@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/GrayCodeAI/rho/internal/engine/safety"
+	"github.com/GrayCodeAI/rho/internal/permissions/stableid"
 
 	tea "charm.land/bubbletea/v2"
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
@@ -47,48 +47,17 @@ func permissionTierSettingValue(level safety.AutonomyLevel) int {
 
 func effectivePermissionTier(sess *engine.Session) safety.AutonomyLevel {
 	if sess == nil {
-		return DefaultContainerAutonomy
+		return DefaultAutonomy
 	}
 	perms := sess.PermSvc()
 	if perms == nil {
-		return DefaultContainerAutonomy
+		return DefaultAutonomy
 	}
-	if perms.Autonomy() == 0 && !perms.AutonomyExplicit() {
-		return DefaultContainerAutonomy
+	state := perms.RuntimeState()
+	if state.Autonomy == 0 && !state.AutonomyExplicit {
+		return DefaultAutonomy
 	}
-	return perms.Autonomy()
-}
-
-func normalizePermissionSandbox(raw string) (string, string, bool) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "":
-		return "workspace", "Workspace", true
-	case "strict":
-		return "strict", "Strict", true
-	case "workspace":
-		return "workspace", "Workspace", true
-	case "off":
-		return "off", "Off", true
-	default:
-		return "", "", false
-	}
-}
-
-func permissionBehaviorSummary(level safety.AutonomyLevel) string {
-	switch level {
-	case safety.AutonomySupervised:
-		return "prompts for every tool call"
-	case safety.AutonomyBasic:
-		return "reads auto-approve; edits and commands ask first"
-	case safety.AutonomySemi:
-		return "reads and file changes auto-approve; commands ask first"
-	case safety.AutonomyFull:
-		return "reads, edits, and normal commands auto-run; risky actions ask first"
-	case safety.AutonomyYOLO:
-		return "minimal prompts; only highest-risk actions stop"
-	default:
-		return "prompts for every tool call"
-	}
+	return state.Autonomy
 }
 
 // specStageLabel returns the display label for the current spec workflow stage.
@@ -114,32 +83,71 @@ func currentDryRun(sess *engine.Session) bool {
 	if sess == nil || sess.PermSvc() == nil {
 		return false
 	}
-	return sess.PermSvc().DryRun()
+	return sess.PermSvc().RuntimeState().DryRun
 }
 
-// parseBypassFlags extracts --scope, --for, --reason from /autonomy bypass args.
-func parseBypassFlags(args []string) (scope []string, expires time.Time, reason string) {
+// parseBypassFlags extracts and validates --scope, --for, and --reason from
+// /autonomy bypass args. Invalid input must fail closed: silently turning a
+// malformed expiry into a session-long bypass is unacceptable.
+func parseBypassFlags(args []string) (scope []string, expires time.Time, reason string, err error) {
+	seen := make(map[string]bool, 3)
+	validScopes := map[string]bool{"bash": true, "network": true, "filesystem": true, "other": true}
+	seenScopes := make(map[string]bool, len(validScopes))
 	for _, a := range args {
 		a = strings.TrimSpace(a)
 		switch {
 		case strings.HasPrefix(a, "--scope="):
+			if seen["scope"] {
+				return nil, time.Time{}, "", fmt.Errorf("--scope may be specified only once")
+			}
+			seen["scope"] = true
 			v := strings.TrimPrefix(a, "--scope=")
 			for _, s := range strings.Split(v, ",") {
 				s = strings.TrimSpace(s)
 				if s != "" {
+					s = strings.ToLower(s)
+					if !validScopes[s] {
+						return nil, time.Time{}, "", fmt.Errorf("invalid bypass scope %q; valid scopes: bash, network, filesystem, other", s)
+					}
+					if seenScopes[s] {
+						return nil, time.Time{}, "", fmt.Errorf("duplicate bypass scope %q", s)
+					}
+					seenScopes[s] = true
 					scope = append(scope, s)
 				}
 			}
-		case strings.HasPrefix(a, "--for="):
-			v := strings.TrimPrefix(a, "--for=")
-			if d, err := time.ParseDuration(v); err == nil {
-				expires = time.Now().Add(d)
+			if len(scope) == 0 {
+				return nil, time.Time{}, "", fmt.Errorf("--scope requires at least one scope")
 			}
+		case strings.HasPrefix(a, "--for="):
+			if seen["for"] {
+				return nil, time.Time{}, "", fmt.Errorf("--for may be specified only once")
+			}
+			seen["for"] = true
+			v := strings.TrimPrefix(a, "--for=")
+			d, parseErr := time.ParseDuration(v)
+			if parseErr != nil || d <= 0 {
+				return nil, time.Time{}, "", fmt.Errorf("invalid --for duration %q; use a positive duration such as 5m", v)
+			}
+			expires = time.Now().Add(d)
 		case strings.HasPrefix(a, "--reason="):
+			if seen["reason"] {
+				return nil, time.Time{}, "", fmt.Errorf("--reason may be specified only once")
+			}
+			seen["reason"] = true
 			reason = strings.Trim(strings.TrimPrefix(a, "--reason="), `"`)
+			reason = strings.TrimSpace(reason)
+			if reason == "" {
+				return nil, time.Time{}, "", fmt.Errorf("--reason requires a non-empty justification")
+			}
+		default:
+			return nil, time.Time{}, "", fmt.Errorf("unknown bypass option %q; use --scope, --for, or --reason", a)
 		}
 	}
-	return scope, expires, reason
+	if reason == "" {
+		return nil, time.Time{}, "", fmt.Errorf("--reason is required when enabling bypass")
+	}
+	return scope, expires, reason, nil
 }
 
 // markOverridden returns " *" if the flag was explicitly overridden by the
@@ -155,18 +163,18 @@ func autonomyCommandHelp() string {
 	return "Autonomy Center\n" +
 		"  /autonomy                          Show current tier, spec stage, and rules\n" +
 		"  /autonomy tier <scout|builder|operator|autonomous>\n" +
-		"  /autonomy bypass <on|off>          Break-glass bypass (optionally --scope --for --reason)\n" +
+		"  /autonomy bypass <on|off>          Break-glass bypass (requires --reason; optional --scope/--for)\n" +
 		"  /autonomy dry-run <on|off>         Deny every tool call unconditionally (kill switch)\n" +
-		"  /autonomy allow <rule>\n" +
-		"  /autonomy deny <rule>\n" +
+		"  /autonomy allow <rule>           Add a session-only allow rule\n" +
+		"  /autonomy deny <rule>            Add a session-only deny rule\n" +
 		"  /autonomy rules                    Show current allow/deny rules\n" +
 		"  /autonomy rules clear              Clear current session rules\n" +
 		"  /autonomy profile [flag=<on|off>]  Show or override per-flag autonomy (auto_execute_bash, auto_network)\n" +
 		"  /autonomy audit                    Show recent permission decisions with reasons\n" +
 		"  /autonomy metrics                  Show permission decision counters\n" +
 		"  /autonomy grants cleanup           Rebuild active rules from settings (clear learned)\n" +
-		"  /autonomy reset                    Reset tier, dry-run, and rules\n" +
-		"  /autonomy save [project|global]    Persist the current policy\n" +
+		"  /autonomy reset                    Reset tier, dry-run, bypass, and session rules\n" +
+		"  /autonomy save [global]           Persist settings (session rules are not saved)\n" +
 		"\n" +
 		"For the spec-driven workflow (gates Write/Edit/Bash until approved), see /spec."
 }
@@ -175,10 +183,14 @@ func autonomyCenterSummary(m *chatModel) string {
 	if m == nil || m.session == nil {
 		return "Autonomy Center unavailable."
 	}
+	perms := m.session.PermSvc()
+	if perms == nil {
+		return "Autonomy Center unavailable: permission service is not initialized."
+	}
 	level := effectivePermissionTier(m.session)
 	tier := autonomyTierName(level)
-	allowRules := effectiveAllowRules(m.settings)
-	denyRules := effectiveDenyRules(m.settings)
+	allowCount, denyCount := activePermissionRuleCounts(m)
+	exactAllow, exactDeny := exactPermissionRuleCounts(m)
 	var b strings.Builder
 	b.WriteString("Autonomy Center\n")
 	b.WriteString(fmt.Sprintf("  Tier: %s\n", tier))
@@ -186,17 +198,63 @@ func autonomyCenterSummary(m *chatModel) string {
 	if currentDryRun(m.session) {
 		b.WriteString("  Dry-run: ON — every tool call is being denied unconditionally\n")
 	}
-	b.WriteString(fmt.Sprintf("  Rules: %d allow, %d deny\n", len(allowRules), len(denyRules)))
-	b.WriteString(fmt.Sprintf("  Behavior: %s\n", permissionBehaviorSummary(level)))
-	if len(allowRules) > 0 {
-		b.WriteString("  Allow: " + strings.Join(allowRules, ", ") + "\n")
+	if enabled, grant := perms.BypassState(); enabled {
+		b.WriteString("  Bypass: ON — break-glass permission checks are relaxed")
+		if grant != nil {
+			if len(grant.Scope) == 0 {
+				b.WriteString(" (scope: all")
+			} else {
+				b.WriteString(" (scope: " + strings.Join(grant.Scope, ","))
+			}
+			if grant.ExpiresAt.IsZero() {
+				b.WriteString(", expires: session")
+			} else {
+				b.WriteString(", expires: " + grant.ExpiresAt.Format(time.RFC3339))
+			}
+			b.WriteString(")")
+		}
+		b.WriteByte('\n')
+	} else {
+		b.WriteString("  Bypass: OFF\n")
 	}
-	if len(denyRules) > 0 {
-		b.WriteString("  Deny: " + strings.Join(denyRules, ", ") + "\n")
+	b.WriteString(fmt.Sprintf("  Rules: %d allow, %d deny", allowCount, denyCount))
+	if exactAllow+exactDeny > 0 {
+		b.WriteString(fmt.Sprintf("; %d persisted exact", exactAllow+exactDeny))
 	}
+	b.WriteByte('\n')
+	b.WriteString(fmt.Sprintf("  Behavior: %s\n", autonomyTierDescription(level)))
 	b.WriteString("\n")
 	b.WriteString(autonomyCommandHelp())
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// permissionViewFor is the single nil-safe lookup used by permission-center
+// presentation code. The UI receives a snapshot instead of the live engine.
+func permissionViewFor(m *chatModel) engine.PermissionView {
+	if m == nil || m.session == nil || m.session.PermSvc() == nil {
+		return engine.PermissionView{}
+	}
+	return m.session.PermSvc().PolicyView()
+}
+
+func activePermissionRuleCounts(m *chatModel) (allow, deny int) {
+	view := permissionViewFor(m)
+	if view.Grants != nil {
+		for _, grant := range view.Grants {
+			if grant.Allow {
+				allow++
+			} else {
+				deny++
+			}
+		}
+		if allow != 0 || deny != 0 {
+			return allow, deny
+		}
+	}
+	if m != nil {
+		return len(effectiveAllowRules(m.settings)), len(effectiveDenyRules(m.settings))
+	}
+	return 0, 0
 }
 
 func permissionRulesSummary(m *chatModel) string {
@@ -206,64 +264,81 @@ func permissionRulesSummary(m *chatModel) string {
 	var b strings.Builder
 	b.WriteString("Permission Rules\n")
 
-	// Show unified grants from the engine (Memory + AutoMode + ApprovalStore)
-	// when available, with source labels. Fall back to settings-based rules.
-	if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().Engine() != nil {
-		pe := m.session.PermSvc().Engine()
-		if pe.UnifiedGrants != nil {
-			grants := pe.UnifiedGrants.All(time.Now())
-			var allows, denies []string
-			for _, g := range grants {
-				label := g.Tool + "(" + g.Pattern + ") [" + g.Source.String() + "]"
-				if g.Label != "" {
-					label += " (" + g.Label + ")"
-				}
-				if g.Allow {
-					allows = append(allows, label)
-				} else {
-					denies = append(denies, label)
-				}
+	// Show unified grants from the engine's session store.
+	// when available, with source labels. Persisted exact rules are appended
+	// separately because they intentionally do not participate in glob matching.
+	view := permissionViewFor(m)
+	if view.Grants != nil {
+		grants := view.Grants
+		var allows, denies []string
+		for _, g := range grants {
+			label := g.Tool + "(" + g.Pattern + ") [" + g.Source.String() + "]"
+			if g.Exact {
+				label += " [exact]"
 			}
-			if len(allows) == 0 {
-				b.WriteString("  Allow: none\n")
+			if g.Label != "" {
+				label += " (" + g.Label + ")"
+			}
+			if g.Allow {
+				allows = append(allows, label)
 			} else {
-				b.WriteString("  Allow:\n")
-				for _, r := range allows {
-					b.WriteString("    - " + r + "\n")
-				}
+				denies = append(denies, label)
 			}
-			if len(denies) == 0 {
-				b.WriteString("  Deny: none\n")
-			} else {
-				b.WriteString("  Deny:\n")
-				for _, r := range denies {
-					b.WriteString("    - " + r + "\n")
-				}
-			}
-			return strings.TrimRight(b.String(), "\n")
 		}
+		appendPermissionRuleSections(&b, allows, denies)
+		appendExactPermissionRules(&b, view.ExactRules)
+		return strings.TrimRight(b.String(), "\n")
 	}
 
 	// Fallback: settings-based rules.
 	allowRules := effectiveAllowRules(m.settings)
 	denyRules := effectiveDenyRules(m.settings)
-	if len(allowRules) == 0 {
+	appendPermissionRuleSections(&b, allowRules, denyRules)
+	appendExactPermissionRules(&b, view.ExactRules)
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func appendPermissionRuleSections(b *strings.Builder, allows, denies []string) {
+	if b == nil {
+		return
+	}
+	if len(allows) == 0 {
 		b.WriteString("  Allow: none\n")
 	} else {
 		b.WriteString("  Allow:\n")
-		for _, rule := range allowRules {
+		for _, rule := range allows {
 			b.WriteString("    - " + rule + "\n")
 		}
 	}
-	if len(denyRules) == 0 {
-		b.WriteString("  Deny: none")
+	if len(denies) == 0 {
+		b.WriteString("  Deny: none\n")
 	} else {
 		b.WriteString("  Deny:\n")
-		for _, rule := range denyRules {
+		for _, rule := range denies {
 			b.WriteString("    - " + rule + "\n")
 		}
 	}
-	return strings.TrimRight(b.String(), "\n")
+}
+
+func exactPermissionRuleCounts(m *chatModel) (allow, deny int) {
+	for _, rule := range permissionViewFor(m).ExactRules {
+		if rule.Decision == stableid.Allow {
+			allow++
+		} else {
+			deny++
+		}
+	}
+	return allow, deny
+}
+
+func appendExactPermissionRules(b *strings.Builder, rules []stableid.RuleSnap) {
+	if b == nil || len(rules) == 0 {
+		return
+	}
+	b.WriteString("  Persisted exact rules:\n")
+	for _, rule := range rules {
+		fmt.Fprintf(b, "    - #%d %s %s: %s\n", rule.ID, rule.Decision.String(), rule.Key.Kind.String(), rule.DisplayIdentity)
+	}
 }
 
 func effectiveAllowRules(settings rhoconfig.Settings) []string {
@@ -302,27 +377,40 @@ func rebuildSessionPermissionRules(sess *engine.Session, settings rhoconfig.Sett
 	if perm == nil {
 		return
 	}
-	mem := perm.Memory()
-	if mem == nil {
-		mem = safety.NewPermissionMemory()
-		sess.PermSvc().SetMemory(mem)
+	allowSpecs := append(append([]string{}, settings.AutoAllow...), settings.AllowedTools...)
+	allowSpecs = append(allowSpecs, parseToolListFromCLI(allowedToolsFlag)...)
+	denySpecs := append([]string{}, settings.DisallowedTools...)
+	denySpecs = append(denySpecs, parseToolListFromCLI(disallowedToolsFlag)...)
+	_ = perm.ReplaceSessionRules(allowSpecs, denySpecs)
+}
+
+// updateAutonomyRule applies the shared session-rule mutation for both
+// /autonomy allow and /autonomy deny. Keeping parsing, deduplication, and the
+// live-memory update together prevents the two commands from drifting apart.
+func (m *chatModel) updateAutonomyRule(parts []string, allow bool) {
+	verb := "allow"
+	setting := &m.settings.AllowedTools
+	usage := "Usage: /autonomy allow <rule>  e.g. /autonomy allow Bash(git:*)"
+	if !allow {
+		verb = "deny"
+		setting = &m.settings.DisallowedTools
+		usage = "Usage: /autonomy deny <rule>  e.g. /autonomy deny Bash(rm -rf *)"
 	}
-	mem.Reset()
-	for _, spec := range settings.AutoAllow {
-		mem.AllowSpec(spec)
+	if len(parts) < 3 {
+		m.messages = append(m.messages, displayMsg{role: "error", content: usage})
+		return
 	}
-	for _, spec := range settings.AllowedTools {
-		mem.AllowSpec(spec)
+	specs := parseToolListFromCLI([]string{strings.Join(parts[2:], " ")})
+	if len(specs) == 0 {
+		m.messages = append(m.messages, displayMsg{role: "error", content: "No valid " + verb + " rule provided."})
+		return
 	}
-	for _, spec := range settings.DisallowedTools {
-		mem.DenySpec(spec)
+	*setting = dedupeStrings(append(*setting, specs...))
+	for _, spec := range specs {
+		_ = m.session.PermSvc().RememberSessionRule(spec, allow)
 	}
-	for _, spec := range parseToolListFromCLI(allowedToolsFlag) {
-		mem.AllowSpec(spec)
-	}
-	for _, spec := range parseToolListFromCLI(disallowedToolsFlag) {
-		mem.DenySpec(spec)
-	}
+	label := strings.ToUpper(verb[:1]) + verb[1:]
+	m.messages = append(m.messages, displayMsg{role: "system", content: label + " rules updated.\n" + permissionRulesSummary(m)})
 }
 
 func savePermissionSettings(scope string, settings rhoconfig.Settings, level safety.AutonomyLevel) (string, error) {
@@ -358,20 +446,34 @@ func resetPermissionCenter(m *chatModel) {
 	if m == nil || m.session == nil {
 		return
 	}
-	m.session.PermSvc().SetAutonomy(DefaultContainerAutonomy)
-	m.settings.Autonomy = permissionTierSettingValue(DefaultContainerAutonomy)
+	perm := m.session.PermSvc()
+	if perm == nil {
+		return
+	}
+	perm.SetAutonomy(DefaultAutonomy)
+	m.settings.Autonomy = permissionTierSettingValue(DefaultAutonomy)
 	m.settings.AutonomyExplicit = true
 	m.settings.AutoAllow = nil
 	m.settings.AllowedTools = nil
 	m.settings.DisallowedTools = nil
-	m.session.PermSvc().SetSpecStage(safety.SpecStageNone)
-	m.session.PermSvc().SetDryRun(false)
+	perm.SetSpecStage(safety.SpecStageNone)
+	perm.SetDryRun(false)
+	// Reset is a complete safety reset: a break-glass bypass must not survive
+	// while the UI reports that autonomy has returned to defaults.
+	perm.DisableBypass()
 	rebuildSessionPermissionRules(m.session, m.settings)
 }
 
 func (m *chatModel) handleAutonomyCommand(parts []string) (chatModel, tea.Cmd) {
+	if m == nil {
+		return chatModel{}, nil
+	}
 	if m.session == nil {
 		m.messages = append(m.messages, displayMsg{role: "error", content: "No active session."})
+		return *m, nil
+	}
+	if m.session.PermSvc() == nil {
+		m.messages = append(m.messages, displayMsg{role: "error", content: "Permission service unavailable."})
 		return *m, nil
 	}
 	if len(parts) == 1 {
@@ -398,7 +500,7 @@ func (m *chatModel) handleAutonomyCommand(parts []string) (chatModel, tea.Cmd) {
 		m.session.PermSvc().SetAutonomy(level)
 		m.settings.Autonomy = permissionTierSettingValue(level)
 		m.settings.AutonomyExplicit = true
-		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Autonomy tier → %s\nBehavior: %s", label, permissionBehaviorSummary(level))})
+		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Autonomy tier → %s\nBehavior: %s", label, autonomyTierDescription(level))})
 	case "dry-run":
 		if len(parts) < 3 {
 			state := "off"
@@ -419,57 +521,16 @@ func (m *chatModel) handleAutonomyCommand(parts []string) (chatModel, tea.Cmd) {
 			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /autonomy dry-run <on|off>"})
 		}
 	case "allow":
-		if len(parts) < 3 {
-			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /autonomy allow <rule> [--for=N]  e.g. /autonomy allow Bash(git:*)"})
-			return *m, nil
-		}
-		// Extract optional --for=N before parsing the rule.
-		var ruleParts []string
-		var forN int
-		for _, p := range parts[2:] {
-			if strings.HasPrefix(p, "--for=") {
-				if n, err := strconv.Atoi(strings.TrimPrefix(p, "--for=")); err == nil && n > 0 {
-					forN = n
-				}
-			} else {
-				ruleParts = append(ruleParts, p)
-			}
-		}
-		specs := parseToolListFromCLI([]string{strings.Join(ruleParts, " ")})
-		if len(specs) == 0 {
-			m.messages = append(m.messages, displayMsg{role: "error", content: "No valid allow rule provided."})
-			return *m, nil
-		}
-		m.settings.AllowedTools = dedupeStrings(append(m.settings.AllowedTools, specs...))
-		rebuildSessionPermissionRules(m.session, m.settings)
-		msg := "Allow rules updated"
-		if forN > 0 {
-			msg += fmt.Sprintf(" (this pattern auto-allowed for next %d uses)", forN)
-		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: msg + ".\n" + permissionRulesSummary(m)})
+		m.updateAutonomyRule(parts, true)
 	case "deny":
-		if len(parts) < 3 {
-			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /autonomy deny <rule>  e.g. /autonomy deny Bash(rm -rf *)"})
-			return *m, nil
-		}
-		specs := parseToolListFromCLI([]string{strings.Join(parts[2:], " ")})
-		if len(specs) == 0 {
-			m.messages = append(m.messages, displayMsg{role: "error", content: "No valid deny rule provided."})
-			return *m, nil
-		}
-		m.settings.DisallowedTools = dedupeStrings(append(m.settings.DisallowedTools, specs...))
-		rebuildSessionPermissionRules(m.session, m.settings)
-		m.messages = append(m.messages, displayMsg{role: "system", content: "Deny rules updated.\n" + permissionRulesSummary(m)})
+		m.updateAutonomyRule(parts, false)
 	case "grants":
 		if len(parts) > 2 && strings.EqualFold(strings.TrimSpace(parts[2]), "cleanup") {
 			if m.session != nil && m.session.PermSvc() != nil {
-				mem := m.session.PermSvc().Memory()
-				if mem != nil {
-					// Reset clears all learned + user rules; rebuild from settings.
-					rebuildSessionPermissionRules(m.session, m.settings)
-					m.messages = append(m.messages, displayMsg{role: "system", content: "Grants cleaned up. Active rules rebuilt from settings.\n" + permissionRulesSummary(m)})
-					return *m, nil
-				}
+				// Reset clears all learned + user rules; rebuild from settings.
+				rebuildSessionPermissionRules(m.session, m.settings)
+				m.messages = append(m.messages, displayMsg{role: "system", content: "Grants cleaned up. Active rules rebuilt from settings.\n" + permissionRulesSummary(m)})
+				return *m, nil
 			}
 			m.messages = append(m.messages, displayMsg{role: "error", content: "No active permission state."})
 			return *m, nil
@@ -506,35 +567,44 @@ func (m *chatModel) handleAutonomyCommand(parts []string) (chatModel, tea.Cmd) {
 			return *m, nil
 		}
 		if len(parts) < 3 {
-			bypass := m.session.PermSvc().BypassKill()
+			enabled, grant := m.session.PermSvc().BypassState()
 			state := "off"
-			if bypass != nil && bypass.IsEnabled() {
+			if enabled {
 				state = "on"
-				g := bypass.Grant()
-				if g != nil && len(g.Scope) > 0 {
-					state += " (scope: " + strings.Join(g.Scope, ",") + ")"
-					if !g.ExpiresAt.IsZero() {
-						state += " (expires: " + g.ExpiresAt.Format("15:04:05") + ")"
+				if grant != nil && len(grant.Scope) > 0 {
+					state += " (scope: " + strings.Join(grant.Scope, ",") + ")"
+					if !grant.ExpiresAt.IsZero() {
+						state += " (expires: " + grant.ExpiresAt.Format("15:04:05") + ")"
 					}
 				}
 			}
-			m.messages = append(m.messages, displayMsg{role: "system", content: "Bypass: " + state + "\nUsage: /autonomy bypass <on|off> [--scope=bash,network] [--for=5m] [--reason=\"debugging\"]"})
+			m.messages = append(m.messages, displayMsg{role: "system", content: "Bypass: " + state + "\nUsage: /autonomy bypass <on|off> --reason=\"debugging\" [--scope=bash,network] [--for=5m]"})
 			return *m, nil
 		}
 		switch strings.ToLower(strings.TrimSpace(parts[2])) {
 		case "on", "true", "1":
-			scope, expires, reason := parseBypassFlags(parts[3:])
-			m.session.PermSvc().BypassKill().EnableScoped(scope, expires, reason)
+			scope, expires, reason, err := parseBypassFlags(parts[3:])
+			if err != nil {
+				m.messages = append(m.messages, displayMsg{role: "error", content: "Invalid bypass options: " + err.Error()})
+				return *m, nil
+			}
+			if !m.session.PermSvc().EnableBypass(scope, expires, reason) {
+				m.messages = append(m.messages, displayMsg{role: "error", content: "Unable to enable bypass: no permission service."})
+				return *m, nil
+			}
 			scopeLabel := "all"
 			if len(scope) > 0 {
 				scopeLabel = strings.Join(scope, ",")
 			}
 			m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Bypass → on (scope: %s, reason: %s). Use with care.", scopeLabel, reason)})
 		case "off", "false", "0":
-			m.session.PermSvc().BypassKill().Disable()
+			if !m.session.PermSvc().DisableBypass() {
+				m.messages = append(m.messages, displayMsg{role: "error", content: "Unable to disable bypass: no permission service."})
+				return *m, nil
+			}
 			m.messages = append(m.messages, displayMsg{role: "system", content: "Bypass → off. Normal permission checks resume."})
 		default:
-			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /autonomy bypass <on|off> [--scope=...] [--for=...] [--reason=...]"})
+			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /autonomy bypass <on|off> --reason=\"...\" [--scope=...] [--for=...]"})
 		}
 	case "profile":
 		if m.session == nil || m.session.PermSvc() == nil {
@@ -571,7 +641,11 @@ func (m *chatModel) handleAutonomyCommand(parts []string) (chatModel, tea.Cmd) {
 		flagVal := strings.ToLower(strings.TrimSpace(flagSet[idx+1:]))
 		val := flagVal == "on" || flagVal == "true" || flagVal == "1"
 		before := m.session.PermSvc().AutonomyProfile()
-		if before == nil || !before.Override(flagName, val) {
+		if before == nil {
+			m.messages = append(m.messages, displayMsg{role: "error", content: fmt.Sprintf("Unknown flag %q. Valid: auto_continue, auto_apply_edits, auto_execute_bash, auto_commit, auto_network", flagName)})
+			return *m, nil
+		}
+		if !before.Override(flagName, val) {
 			m.messages = append(m.messages, displayMsg{role: "error", content: fmt.Sprintf("Unknown flag %q. Valid: auto_continue, auto_apply_edits, auto_execute_bash, auto_commit, auto_network", flagName)})
 			return *m, nil
 		}
@@ -659,7 +733,7 @@ func (m *chatModel) handleAutonomyCommand(parts []string) (chatModel, tea.Cmd) {
 		m.messages = append(m.messages, displayMsg{role: "system", content: m.session.PermSvc().PermissionMetrics()})
 	case "reset":
 		resetPermissionCenter(m)
-		m.messages = append(m.messages, displayMsg{role: "system", content: "Autonomy Center reset to defaults.\n" + autonomyCenterSummary(m)})
+		m.messages = append(m.messages, displayMsg{role: "system", content: "Session autonomy reset to defaults. Persisted exact rules were kept; use `rho permissions reset` to remove them with confirmation.\n" + autonomyCenterSummary(m)})
 	default:
 		m.messages = append(m.messages, displayMsg{role: "system", content: autonomyCommandHelp()})
 	}

@@ -39,7 +39,7 @@ func TestUnifiedGrants_SourcePriority(t *testing.T) {
 	store := FuncGrantStore{Fn: func() []Grant {
 		return []Grant{
 			// Auto-learned allow (low priority).
-			{Tool: "Bash", Pattern: "deploy *", Allow: true, Source: SourceAutoLearned},
+			{Tool: "Bash", Pattern: "deploy *", Allow: true, Source: SourceUserAllow},
 			// User deny (higher priority).
 			{Tool: "Bash", Pattern: "deploy *", Allow: false, Source: SourceUserDeny},
 		}
@@ -89,7 +89,7 @@ func TestUnifiedGrants_MultiStore(t *testing.T) {
 		return []Grant{{Tool: "Read", Pattern: "*", Allow: true, Source: SourceUserAllow}}
 	}}
 	s2 := FuncGrantStore{Fn: func() []Grant {
-		return []Grant{{Tool: "Bash", Pattern: "go test*", Allow: true, Source: SourceAutoLearned}}
+		return []Grant{{Tool: "Bash", Pattern: "go test*", Allow: true, Source: SourceUserAllow}}
 	}}
 	u := NewUnifiedGrants(s1, s2)
 
@@ -110,7 +110,7 @@ func TestUnifiedGrants_AllDedup(t *testing.T) {
 	store := FuncGrantStore{Fn: func() []Grant {
 		return []Grant{
 			{Tool: "Bash", Pattern: "git*", Allow: true, Source: SourceUserAllow},
-			{Tool: "Bash", Pattern: "git*", Allow: true, Source: SourceAutoLearned}, // dup
+			{Tool: "Bash", Pattern: "git*", Allow: true, Source: SourceUserAllow}, // dup
 		}
 	}}
 	u := NewUnifiedGrants(store)

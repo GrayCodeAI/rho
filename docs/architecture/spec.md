@@ -32,7 +32,6 @@ layout:
 | `spec/` | OpenSpec schema consumed by `internal/spec` |
 | `docs/` | Architecture docs, design docs, plans |
 | `rules/` | User-defined rules |
-| `deploy/` | Docker deployment |
 | `testdata/` | Test fixtures |
 
 ### REQ-2: Internal Package Organization
@@ -51,7 +50,7 @@ The `internal/` directory SHALL contain the following packages:
 | `mcp/` | Model Context Protocol client/server |
 | `daemon/` | Background HTTP/SSE server |
 | `resilience/` | Circuit breaker, rate limiting, health checks |
-| `sandbox/` | Seatbelt, landlock, net proxy |
+| `permissions/` | Permission tiers, allow/deny rules, approval gates |
 | `intelligence/` | Repo map, AST analysis, dependency graphs |
 | `multiagent/` | Personas, inter-agent messaging, sub-agents |
 | `feature/` | Eval, fingerprint, voice, taste, shellmode |

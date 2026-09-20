@@ -3,6 +3,12 @@
 Status: Audited. Core ideas already implemented natively in rho; remaining
 deltas recorded as future RFCs.
 
+> **Superseded runtime assumptions (2026-09-20):** Rho no longer ships a
+> native OS/container sandbox or a Docker execution backend. The permission
+> engine, path guard, trust policy, and destructive-command hard blocks are
+> the current local safety boundary. Sandbox rows below are historical design
+> notes and must not be treated as current implementation work.
+
 Source: `https://github.com/openai/codex` (Apache-2.0, Rust workspace
 `codex-rs`, ~100 crates)
 
@@ -14,9 +20,7 @@ than codex's equivalents because they build on Rho's independent ecosystem
 repositories.
 No second runtime, sandbox layer, or policy engine was created.
 
-One small transparency improvement was adopted: the resolved native sandbox
-backend (seatbelt / landlock / docker / …) is now reported in the unified
-status snapshot alongside the requested policy label.
+The former native sandbox-backend status was removed with the sandbox runtime.
 
 Three codex ideas are deliberately deferred as future RFCs; see
 [Deliberately Deferred](#deliberately-deferred).
@@ -36,22 +40,19 @@ Three codex ideas are deliberately deferred as future RFCs; see
 | `memories`, `agent-graph-store`, `context-fragments` | sibling `harrier` (Harrier) graph memory; eventlog/graphjournal projections | Keep rho |
 | `apply-patch`, `file-search`, `file-watcher`, `git-utils` | edit tools, codegraph, git tooling, watcher hooks | Keep rho |
 | `external-agent-migration` | swift reads Claude Code / Codex / Gemini CLI / OpenCode / Cursor sessions | Parity |
-| **`linux-sandbox`** (Landlock + seccomp-bpf) | `internal/sandbox/landlock.go`, `seccomp.go` — raw syscalls and BPF filter, no external tools | Already implemented |
-| **macOS Seatbelt** | `internal/sandbox/seatbelt.go` — SBPL profile generator with per-policy read/write/process/network rules | Already implemented |
-| Windows confinement | `internal/sandbox/windows_acl.go` | Already implemented |
-| **`bwrap`**, nsjail, container fallbacks | `selector.go` orders landlock > nsjail > bwrap > docker per platform | Already implemented |
-| **`network-proxy`** (egress through inspectable proxy) | `internal/sandbox/netproxy.go` + egress tests | Already implemented |
-| **`execpolicy`** (structured pre-exec command analysis) | `internal/sandbox/code_verifier.go` static analysis of generated code (blocked modules/functions/patterns incl. privilege escalation) plus permission-engine destructive-command hard block and user `NeverAllow` ceiling | Covered by equivalent layers |
-| **`shell-escalation`** (exact re-validated widening approval) | sandbox policy statements direct denial/escalation flow; `PermissionService.EscalatePermission` binds single-use opaque tokens to exact calls | Covered by equivalent layers |
+| **`linux-sandbox`** (Landlock + seccomp-bpf) | Removed from the local product runtime | Removed |
+| **macOS Seatbelt** | Removed from the local product runtime | Removed |
+| Windows confinement | Removed from the local product runtime | Removed |
+| **`bwrap`**, nsjail, container fallbacks | Removed from the local product runtime | Removed |
+| **`network-proxy`** (egress through inspectable proxy) | Not part of the local product runtime | Removed |
+| **`execpolicy`** (structured pre-exec command analysis) | Permission-engine destructive-command hard block and `NeverAllow` ceiling remain; sandbox code verification was removed | Replaced by permission/path policy |
+| **`shell-escalation`** (exact re-validated widening approval) | `PermissionService.EscalatePermission` binds single-use opaque tokens to exact calls; no sandbox policy layer | Kept at permission layer |
 | `sdk` (TS), `thread-manager-sample` | daemon REST/SSE API is the programmatic surface; Go SDK deferred until consumers require it | Deferred (matches fx plan) |
 
 ### Adopted in this change
 
-- Status transparency: `rho status` (text and `--json`) now resolves the
-  effective sandbox backend via `sandbox.SelectSandbox` and reports it as
-  `permission.sandbox_backend`, so operators can confirm real kernel-level
-  isolation (seatbelt on macOS, landlock/seccomp on Linux, ACL on Windows,
-  docker fallbacks) instead of only the strict/workspace/off label.
+- Status transparency remains limited to the effective permission and path
+  policy. There is no sandbox backend or `permission.sandbox_backend` field.
 - **Batch tool** (safe core of codex Code Mode): a `Batch` tool runs a list of
   read-only tool calls in a single turn, cutting agent round-trips for fan-out
   research. It reuses the existing read-only allowlist and per-call schema
@@ -62,7 +63,7 @@ Three codex ideas are deliberately deferred as future RFCs; see
 ## Deliberately Deferred
 
 - **Full Code Mode** (`code-mode`, `code-mode-runtime`, `v8-poc`): letting the
-  model author an arbitrary script that batches tool calls into one sandboxed
+  model author an arbitrary script that batches tool calls into one permission-checked
   execution, including mutation and control flow. The `Batch` tool above covers
   the safe read-only fan-out case. Arbitrary-script execution still requires an
   embedded runtime, capabilities model, and output-trust threat model; track as

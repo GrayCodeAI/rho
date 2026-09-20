@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/GrayCodeAI/rho/internal/feature/taste"
+	"github.com/GrayCodeAI/rho/internal/features/taste"
 	"github.com/spf13/cobra"
 )
 
@@ -64,6 +64,7 @@ var tasteResetCmd = &cobra.Command{
 func init() {
 	tasteCmd.PersistentFlags().StringVar(&tasteProjectID, "project", "", "project ID (defaults to current directory name)")
 	tastePushCmd.Flags().StringVar(&tasteFile, "file", "", "output file path (defaults to stdout)")
+	tasteResetCmd.Flags().Bool("yes", false, "confirm clearing taste preferences")
 
 	tasteCmd.AddCommand(tasteShowCmd)
 	tasteCmd.AddCommand(tastePushCmd)
@@ -164,16 +165,20 @@ func runTastePull(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTasteReset(_ *cobra.Command, _ []string) error {
+func runTasteReset(cmd *cobra.Command, _ []string) error {
 	store, err := getTasteStore()
 	if err != nil {
 		return fmt.Errorf("open taste store: %w", err)
 	}
 
 	projectID := getProjectID()
-	ok, err := confirmDestructive(fmt.Sprintf("Clear all taste preferences for project %q? This cannot be undone.", projectID))
-	if err != nil {
-		return err
+	ok, _ := cmd.Flags().GetBool("yes")
+	if !ok {
+		var err error
+		ok, err = confirmDestructive(fmt.Sprintf("Clear all taste preferences for project %q? This cannot be undone.", projectID))
+		if err != nil {
+			return err
+		}
 	}
 	if !ok {
 		fmt.Printf("%s\n", auditTint("Cancelled.", textMuted))

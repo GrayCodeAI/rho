@@ -45,7 +45,6 @@ rho/
 │   ├── config/                <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/settings.svg" width="16" height="16" alt="settings" /> Settings, env manager, migration
 │   ├── session/               <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/database.svg" width="16" height="16" alt="database" /> SQLite persistence, search, export
 │   ├── permissions/           <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/shield.svg" width="16" height="16" alt="shield" /> Guardian, rules DSL, boundary checker
-│   ├── sandbox/               <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/box.svg" width="16" height="16" alt="box" /> Landlock + seccomp isolation
 │   ├── intelligence/          <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/git-branch.svg" width="16" height="16" alt="git-branch" /> Repo map, AST analysis, deps
 │   ├── multiagent/            <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/users.svg" width="16" height="16" alt="users" /> Personas, inter-agent messaging
 │   ├── mcp/                   <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/plug.svg" width="16" height="16" alt="plug" /> MCP client and server
@@ -109,7 +108,7 @@ All three SDKs share types from **eagle** and consume the daemon REST API (:4590
 Every tool call passes through the permission system before execution:
 
 ```
-Tool Call → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/shield.svg" width="16" height="16" alt="shield" /> Guardian (rules DSL) → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/blocks.svg" width="16" height="16" alt="blocks" /> Boundary Checker → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/user.svg" width="16" height="16" alt="user" /> User Approval → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/box.svg" width="16" height="16" alt="box" /> Sandbox (landlock/seccomp) → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/check-circle.svg" width="16" height="16" alt="check-circle" /> Execute
+Tool Call → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/shield.svg" width="16" height="16" alt="shield" /> Permission Rules → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/blocks.svg" width="16" height="16" alt="blocks" /> Path & Boundary Checks → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/user.svg" width="16" height="16" alt="user" /> User Approval → <img src="https://cdn.jsdelivr.net/gh/lucide-icons/lucide@latest/icons/check-circle.svg" width="16" height="16" alt="check-circle" /> Host Execute
 ```
 
 ---

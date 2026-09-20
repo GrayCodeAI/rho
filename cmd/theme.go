@@ -21,6 +21,9 @@ package cmd
 //  10. Icons & glyphs
 
 import (
+	"fmt"
+	"strings"
+
 	lipgloss "charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/compat"
 
@@ -56,8 +59,7 @@ var warnAmber = lipgloss.Color("#FFB347")
 // errorCoral — error (anywhere — generic, status, container).
 var errorCoral = lipgloss.Color("#FF6B6B")
 
-// infoSky — info, status CWD, container-adjacent (though see
-// containerBlue for Docker-specific labels).
+// infoSky — info and status CWD.
 var infoSky = lipgloss.Color("#75B1E2")
 
 // ---------------------------------------------------------------------------
@@ -74,9 +76,9 @@ var agentGold = lipgloss.Color("#FFD93D")
 // doneGreen — agent "done"/success state.
 var doneGreen = lipgloss.Color("#4CAF50")
 
-// containerBlue — Docker container label. Distinct from infoSky so
-// container output reads as its own zone in the status footer.
-var containerBlue = lipgloss.Color("#3BAADA")
+// fileHeaderBlue — diff file headers. Distinct from infoSky so file identity
+// reads as its own structural zone.
+var fileHeaderBlue = lipgloss.Color("#3BAADA")
 
 // Autonomy tier colors (Scout → Builder → Operator → Autonomous), coolest to hottest.
 var (
@@ -152,6 +154,10 @@ var borderDim = compat.AdaptiveColor{Light: lipgloss.Color("#C6C6C6"), Dark: lip
 // than pure black so code blocks remain distinct without looking detached.
 var bgCode = lipgloss.Color("#1B1E26")
 
+// permissionBg — readable surface behind an approval prompt. It is kept
+// separate from bgCode because the prompt is a warning surface, not code.
+var permissionBg = lipgloss.Color("#3A2A00")
+
 // ---------------------------------------------------------------------------
 // 9. Spinner-line ANSI escapes (raw, not lipgloss)
 //
@@ -171,28 +177,42 @@ var bgCode = lipgloss.Color("#1B1E26")
 // ---------------------------------------------------------------------------
 
 const (
-	ansiOrange     = internaltheme.BrandANSI // legacy name; renders Talon Gold
-	ansiGreen      = "\033[92m"
-	ansiYellow     = "\033[93m"
-	ansiBlue       = "\033[94m"
-	ansiMagenta    = "\033[95m"
-	ansiCyan       = "\033[96m"
-	ansiWhite      = "\033[97m"
-	ansiTeal       = "\033[38;2;78;205;196m"  // matches successTeal — spinner elapsed
-	ansiCoral      = "\033[38;2;255;107;107m" // matches errorCoral
-	ansiAmber      = "\033[38;2;255;179;71m"  // matches warnAmber
-	ansiGrayDim    = "\033[38;2;102;102;102m" // matches textDisabled
-	ansiDone       = "\033[38;2;76;175;80m"   // matches doneGreen — diff additions
-	ansiSky        = "\033[38;2;117;177;226m" // matches infoSky — diff hunk headers
-	ansiContBlue   = "\033[38;2;59;170;218m"  // matches containerBlue — diff file headers
-	ansiPink       = "\033[38;2;255;105;180m" // matches hudLabelPink (#FF69B4 Hot Pink)
-	ansiLightPink  = "\033[38;2;255;182;193m" // #FFB6C1 Light Pink
-	ansiVividGreen = "\033[38;2;0;230;118m"   // #00E676 Vivid Emerald Green
-	ansiDim        = "\033[2m"
-	ansiItalic     = "\033[3m"
-	ansiBold       = "\033[1m"
-	ansiReset      = "\033[0m"
+	ansiOrange  = internaltheme.BrandANSI // legacy name; renders Talon Gold
+	ansiGreen   = "\033[92m"
+	ansiYellow  = "\033[93m"
+	ansiBlue    = "\033[94m"
+	ansiMagenta = "\033[95m"
+	ansiCyan    = "\033[96m"
+	ansiWhite   = "\033[97m"
+	ansiDim     = "\033[2m"
+	ansiItalic  = "\033[3m"
+	ansiBold    = "\033[1m"
+	ansiReset   = "\033[0m"
 )
+
+// Theme-aware raw ANSI colors. These mirror the semantic lipgloss colors and
+// are refreshed by ApplyTheme; the 20-color spinner wave remains intentionally
+// fixed so its motion is recognizable across themes.
+var (
+	ansiTeal       = ansiFromHex("#4ECDC4")
+	ansiCoral      = ansiFromHex("#FF6B6B")
+	ansiAmber      = ansiFromHex("#FFB347")
+	ansiGrayDim    = ansiFromHex("#666666")
+	ansiDone       = ansiFromHex("#4CAF50")
+	ansiSky        = ansiFromHex("#75B1E2")
+	ansiFileBlue   = ansiFromHex("#3BAADA")
+	ansiPink       = ansiFromHex("#FF69B4")
+	ansiLightPink  = ansiFromHex("#FFB6C1")
+	ansiVividGreen = ansiFromHex("#00E676")
+)
+
+func ansiFromHex(hex string) string {
+	r, g, b, err := internaltheme.HexToRGB(hex)
+	if err != nil {
+		return internaltheme.BrandANSI
+	}
+	return fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)
+}
 
 // ---------------------------------------------------------------------------
 // 10. Icons & glyphs
@@ -226,6 +246,7 @@ const quitAgainMsg = "Press Ctrl+C again to quit."
 // "auto" resolves to the OS preference (dark/light) using internaltheme.ApplyThemePreference.
 // If detection fails, defaults to "dark".
 func ApplyTheme(name string) {
+	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
 		return
 	}
@@ -247,12 +268,22 @@ func ApplyTheme(name string) {
 	warnAmber = lipgloss.Color(p.Amber)
 	errorCoral = lipgloss.Color(p.Red)
 	infoSky = lipgloss.Color(p.Blue)
+	ansiTeal = ansiFromHex(p.Green)
+	ansiCoral = ansiFromHex(p.Red)
+	ansiAmber = ansiFromHex(p.Amber)
+	ansiGrayDim = ansiFromHex(p.Faintest)
 
 	// 3. Tooling & agents — reuse semantic colors from palette.
 	toolGold = lipgloss.Color(p.Amber)
 	agentGold = lipgloss.Color(p.Accent)
 	doneGreen = lipgloss.Color(p.Green)
-	containerBlue = lipgloss.Color(p.Blue)
+	fileHeaderBlue = lipgloss.Color(p.Blue)
+	ansiDone = ansiFromHex(p.Green)
+	ansiSky = ansiFromHex(p.Blue)
+	ansiFileBlue = ansiFromHex(p.Blue)
+	ansiPink = ansiFromHex(p.Accent)
+	ansiLightPink = ansiFromHex(p.Accent)
+	ansiVividGreen = ansiFromHex(p.Green)
 
 	// 4. Autonomy tier colors.
 	tierInspect = lipgloss.Color(p.Blue)
@@ -275,10 +306,12 @@ func ApplyTheme(name string) {
 	textMuted = compat.AdaptiveColor{Light: lipgloss.Color("#6B6B6B"), Dark: lipgloss.Color(p.Muted)}
 	textPlaceholder = lipgloss.Color(p.Faint)
 	textDisabled = compat.AdaptiveColor{Light: lipgloss.Color("#A0A0A0"), Dark: lipgloss.Color(p.Faintest)}
+	textWhite = lipgloss.Color(p.Ink)
 
 	// 8. Structure.
 	borderDim = compat.AdaptiveColor{Light: lipgloss.Color("#C6C6C6"), Dark: lipgloss.Color(p.Line2)}
 	bgCode = lipgloss.Color(p.Panel)
+	permissionBg = lipgloss.Color(p.PermBg)
 
 	// 9. Minimal chrome: the Tau theme (and any future low-chrome theme) uses
 	// a hairline separator under the input instead of a full box border.
@@ -347,6 +380,16 @@ func refreshThemeStyles() {
 	agentTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(agentGold)
 	agentStatusStyle = lipgloss.NewStyle().Foreground(textMuted)
 
-	// chat_scrollbar.go
-	scrollbarThumbStyle = lipgloss.NewStyle().Foreground(rhoColor)
+	// statusbar.go
+	refreshStatusBarStyles()
+
+	// hud_panel.go
+	hudBorderColor = hudBorderPurple
+	hudHeaderColor = toolGold
+	hudLabelColor = hudLabelPink
+	hudDimHUDColor = textDisabled
+	hudHeaderStyle = lipgloss.NewStyle().Foreground(hudHeaderColor).Bold(true)
+	hudLabelStyle = lipgloss.NewStyle().Foreground(hudLabelColor)
+	hudDimHUDStyle = lipgloss.NewStyle().Foreground(hudDimHUDColor)
+	hudSectionStyle = lipgloss.NewStyle().Foreground(hudBorderColor).Bold(true)
 }

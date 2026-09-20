@@ -1,5 +1,10 @@
 # Wave 2 — high-value deepseek-harness RFC ports for rho
 
+> **Sandbox phases are obsolete.** Rho no longer contains `internal/sandbox`,
+> Docker execution, or an OS/container sandbox backend. Do not implement Phase
+> 2.3 or 2.11 as written; any future policy work must target the host-native
+> permission, path, trust, and environment controls.
+
 Status: **Proposed** (RFC specs only; no code on this branch yet). Each phase below
 is a self-contained feature-branch spec in the style of the Wave 1 docs, ready to
 be cut into its own branch and gated.
@@ -35,7 +40,7 @@ Reference source: `deepseek-ai/deepseek-harness` at `dsh-v0.1.0-rc.7`
 | --- | --- | --- | --- |
 | 2.1 | `guard/timeout-policy` | no per-tool declared timeout enforced at dispatch | **implemented** on `feat/dsh-harness-rfc-2.1-timeout-policy` |
 | 2.2 | `compaction/compaction` tool-pairing helpers | compact strategies can cut across open tool call/result pairs | proposed |
-| 2.3 | `sandbox/sandbox-policy` | durable per-session sandbox override + model-facing policy statement | proposed |
+| 2.3 | `sandbox/sandbox-policy` | obsolete: no product sandbox runtime; use host policy statements | **removed** |
 | 2.4 | `subagent/subagent` delegated policy inheritance | workers can prompt / policy not fixed at delegation boundary | proposed |
 | 2.5 | `skill/skill`, `skill/tool-skill` | no invocation policy split, no digest catalog, no provider seam | proposed |
 | 2.6 | `session-query/*sqlite` | no SQLite FTS search over session logs | proposed |
@@ -43,7 +48,7 @@ Reference source: `deepseek-ai/deepseek-harness` at `dsh-v0.1.0-rc.7`
 | 2.8 | `acp/acp-client`, `subagent/subagent-acp|-claude-code|-codex` | ACP server only; no client / external-agent providers | proposed |
 | 2.9 | `terminal/*`, `tool-terminal` | no persistent PTY tool (revives gap `#25`) | proposed |
 | 2.10 | `subagent/subagent` continuable children + cold resume | mission workers are one-shot; no durable children | proposed |
-| 2.11 | `sandbox/sandbox-windows-acl` | non-Linux sandbox is a stub (Docker-only) | proposed |
+| 2.11 | `sandbox/sandbox-windows-acl` | obsolete: no product sandbox runtime | **removed** |
 | 2.12 | `lsp/lsp-stdio` | document LRU + unscrubbed env vs transient-open + scrubbing | proposed |
 
 Suggested branch cut order: 2.1 → 2.2 → 2.3 → 2.4 → 2.5 → 2.6 → 2.7 → 2.8 →
@@ -118,6 +123,11 @@ turn boundaries; replace generation rebuilds membership; orphaned-bracket
 detection and adoption on load; deterministic replay after replace.
 
 ## Phase 2.3 — Sandbox mode vocabulary + model-facing policy (`internal/sandbox` + `internal/eventlog` + `internal/engine`)
+
+> **Obsolete specification — retained for historical provenance only.** Do not
+> implement this phase. Rho's current product boundary is host-native
+> permission, path, trust, and environment policy; there is no sandbox mode or
+> `internal/sandbox` package to extend.
 
 Port of DSH `sandbox/sandbox-policy` semantics
 (`SandboxMode` read-only / workspace-write / danger-full-access,
@@ -366,12 +376,13 @@ pre-publication failure.
 
 ## Phase 2.11 — Native Windows ACL sandbox (`internal/sandbox`)
 
-Port of DSH `sandbox/sandbox-windows-acl`. `internal/sandbox/landlock_other.go`
-is currently a stub on non-Linux (`Apply` always errors; `Available` false), so
-on Windows rho is Docker-only and fails closed without Docker. This phase gives
-Windows a native, unprivileged confinement backend matching the Landlock
-philosophy already stated in `landlock.go` ("works without root, without Docker,
-without external tools").
+> **Obsolete specification — retained for historical provenance only.** Do not
+> implement this phase. Rho no longer provides a local OS/container sandbox or
+> Docker fallback on any platform.
+
+The original proposal ported DSH `sandbox/sandbox-windows-acl` and assumed a
+cross-platform confinement backend. That assumption is no longer part of
+Rho's local product architecture.
 
 - `internal/sandbox/windows_acl.go` (`//go:build windows`):
   - Implements the same `Sandbox` interface as `landlock.go`

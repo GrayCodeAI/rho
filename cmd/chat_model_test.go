@@ -14,7 +14,8 @@ import (
 	"github.com/GrayCodeAI/rho/internal/bridge/sessioncapture"
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	"github.com/GrayCodeAI/rho/internal/engine"
-	"github.com/GrayCodeAI/rho/internal/feature/shellmode"
+	chatfeature "github.com/GrayCodeAI/rho/internal/features/chat"
+	"github.com/GrayCodeAI/rho/internal/features/shellmode"
 	"github.com/GrayCodeAI/rho/internal/provider/gateway"
 	"github.com/GrayCodeAI/rho/internal/session"
 	"github.com/GrayCodeAI/rho/internal/storage"
@@ -23,7 +24,7 @@ import (
 
 func newTestChatModel() *chatModel {
 	sess := engine.NewSession("", "test-model", "you are helpful", nil)
-	sess.PermSvc().SetMaxTurns(1)
+	_ = sess.SetMaxTurns(1)
 	sess.SetTestClient(engine.NewMockClientForTest())
 
 	m := &chatModel{
@@ -78,26 +79,48 @@ func isolateChatCommandSweepEnv(t *testing.T) {
 func restoreThemeGlobals(t *testing.T) {
 	t.Helper()
 	savedRho, savedSuccess, savedWarn, savedErr, savedInfo := rhoColor, successTeal, warnAmber, errorCoral, infoSky
-	savedTool, savedAgent, savedDone, savedContainer := toolGold, agentGold, doneGreen, containerBlue
+	savedTool, savedAgent, savedDone, savedFileHeader := toolGold, agentGold, doneGreen, fileHeaderBlue
 	savedInspect, savedEdit, savedRun, savedTrust := tierInspect, tierEdit, tierRun, tierTrust
 	savedHudBorder, savedHudLabel := hudBorderPurple, hudLabelPink
+	savedHUDColorBorder, savedHUDColorHeader, savedHUDColorLabel, savedHUDColorDim := hudBorderColor, hudHeaderColor, hudLabelColor, hudDimHUDColor
+	savedHUDStyles := [4]lipgloss.Style{hudHeaderStyle, hudLabelStyle, hudDimHUDStyle, hudSectionStyle}
 	savedCost, savedBranch, savedToken, savedCwd := costViolet, branchYellow, tokenSage, cwdBlue
+	savedANSI := [10]string{ansiTeal, ansiCoral, ansiAmber, ansiGrayDim, ansiDone, ansiSky, ansiFileBlue, ansiPink, ansiLightPink, ansiVividGreen}
 	savedPrimary, savedMuted, savedPlaceholder, savedDisabled := textPrimary, textMuted, textPlaceholder, textDisabled
 	savedBorderDim, savedBgCode := borderDim, bgCode
+	savedTextWhite, savedPermissionBg := textWhite, permissionBg
 	savedInputBorder := inputBorderStyle
+	savedStatusCWD, savedStatusBranch, savedStatusSpec := statusCWDColor, statusBranchColor, statusSpecColor
+	savedStatusToken, savedStatusCost, savedStatusPR := statusTokenColor, statusCostColor, statusPRColor
+	savedStatusCwdStyle, savedStatusPRStyle := statusCwdStyle, statusPRStyle
+	savedStatusBranchStyle, savedStatusSpecStyle := statusBranchStyle, statusSpecStyle
+	savedStatusTokenStyle, savedStatusCostStyle := statusTokenStyle, statusCostStyle
+	savedStatusClockStyle, savedStatusFocusStyle := statusClockStyle, statusFocusStyle
+	savedStatusDimStyle, savedDryRunStyle := statusDimStyle, dryRunStyle
 	savedMinimalChrome := minimalChrome
 	hasDark := lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
 	t.Cleanup(func() {
 		rhoColor, successTeal, warnAmber, errorCoral, infoSky = savedRho, savedSuccess, savedWarn, savedErr, savedInfo
-		toolGold, agentGold, doneGreen, containerBlue = savedTool, savedAgent, savedDone, savedContainer
+		toolGold, agentGold, doneGreen, fileHeaderBlue = savedTool, savedAgent, savedDone, savedFileHeader
 		tierInspect, tierEdit, tierRun, tierTrust = savedInspect, savedEdit, savedRun, savedTrust
 		hudBorderPurple, hudLabelPink = savedHudBorder, savedHudLabel
+		hudBorderColor, hudHeaderColor, hudLabelColor, hudDimHUDColor = savedHUDColorBorder, savedHUDColorHeader, savedHUDColorLabel, savedHUDColorDim
+		hudHeaderStyle, hudLabelStyle, hudDimHUDStyle, hudSectionStyle = savedHUDStyles[0], savedHUDStyles[1], savedHUDStyles[2], savedHUDStyles[3]
 		costViolet, branchYellow, tokenSage, cwdBlue = savedCost, savedBranch, savedToken, savedCwd
+		ansiTeal, ansiCoral, ansiAmber, ansiGrayDim, ansiDone, ansiSky, ansiFileBlue, ansiPink, ansiLightPink, ansiVividGreen = savedANSI[0], savedANSI[1], savedANSI[2], savedANSI[3], savedANSI[4], savedANSI[5], savedANSI[6], savedANSI[7], savedANSI[8], savedANSI[9]
 		textPrimary, textMuted, textPlaceholder, textDisabled = savedPrimary, savedMuted, savedPlaceholder, savedDisabled
 		borderDim, bgCode = savedBorderDim, savedBgCode
+		textWhite, permissionBg = savedTextWhite, savedPermissionBg
 		// ApplyTheme also rewrites the input border and chrome mode; restore
 		// them so a palette swap cannot leak into layout tests.
 		inputBorderStyle = savedInputBorder
+		statusCWDColor, statusBranchColor, statusSpecColor = savedStatusCWD, savedStatusBranch, savedStatusSpec
+		statusTokenColor, statusCostColor, statusPRColor = savedStatusToken, savedStatusCost, savedStatusPR
+		statusCwdStyle, statusPRStyle = savedStatusCwdStyle, savedStatusPRStyle
+		statusBranchStyle, statusSpecStyle = savedStatusBranchStyle, savedStatusSpecStyle
+		statusTokenStyle, statusCostStyle = savedStatusTokenStyle, savedStatusCostStyle
+		statusClockStyle, statusFocusStyle = savedStatusClockStyle, savedStatusFocusStyle
+		statusDimStyle, dryRunStyle = savedStatusDimStyle, savedDryRunStyle
 		minimalChrome = savedMinimalChrome
 		// HasDarkBackground is now a function (no args), SetHasDarkBackground removed in v2
 		_ = hasDark
@@ -228,7 +251,7 @@ func TestChatModel_ManyCommands(t *testing.T) {
 		"/compact", "/diff", "/branch", "/vim",
 		"/power", "/fast", "/effort",
 		"/memory", "/plugins", "/mcp",
-		"/sandbox", "/autonomy",
+		"/autonomy",
 		"/usage", "/metrics", "/integrity",
 		"/keybindings", "/cron", "/tasks",
 		"/files", "/branches", "/provider-status",
@@ -247,7 +270,7 @@ func TestChatModel_ManyCommands(t *testing.T) {
 		"/statusline", "/tokens", "/tools",
 		"/upgrade", "/version", "/welcome",
 		"/yolo", "/voice", "/agents",
-		"/audit", "/dream",
+		"/audit",
 		"/release-notes", "/reload-plugins",
 		"/remote-env", "/render",
 		"/add main.go", "/add-dir .",
@@ -388,17 +411,18 @@ func TestChatModel_StreamingCommands(t *testing.T) {
 
 func TestChatModel_PushHistoryCapsAtMax(t *testing.T) {
 	m := newTestChatModel()
-	for i := 0; i < maxPromptHistory+50; i++ {
+	for i := 0; i < chatfeature.DefaultHistoryLimit+50; i++ {
 		m.pushHistory(fmt.Sprintf("prompt-%d", i))
 	}
-	if len(m.history) != maxPromptHistory {
-		t.Fatalf("history len = %d, want %d", len(m.history), maxPromptHistory)
+	entries := m.history.Entries()
+	if len(entries) != chatfeature.DefaultHistoryLimit {
+		t.Fatalf("history len = %d, want %d", len(entries), chatfeature.DefaultHistoryLimit)
 	}
-	if m.history[0] != "prompt-50" || m.history[len(m.history)-1] != fmt.Sprintf("prompt-%d", maxPromptHistory+49) {
-		t.Fatalf("history did not keep the most recent prompts: first=%q last=%q", m.history[0], m.history[len(m.history)-1])
+	if entries[0] != "prompt-50" || entries[len(entries)-1] != fmt.Sprintf("prompt-%d", chatfeature.DefaultHistoryLimit+49) {
+		t.Fatalf("history did not keep the most recent prompts: first=%q last=%q", entries[0], entries[len(entries)-1])
 	}
-	if m.historyIdx != len(m.history) {
-		t.Fatalf("historyIdx = %d, want %d", m.historyIdx, len(m.history))
+	if m.history.Index() != len(entries) {
+		t.Fatalf("history index = %d, want %d", m.history.Index(), len(entries))
 	}
 }
 

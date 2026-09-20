@@ -32,9 +32,10 @@ reporting** — is fully feasible and safe (non-TUI) and is adopted here.
 
 ### Scope and ownership
 
-- Primary: `internal/feature/evalloop`.
+- Primary: `internal/features/evalloop`.
 - CLI: `cmd/eval.go` loop mode.
-- No changes to `internal/sandbox`, `internal/session`, or `internal/daemon`.
+- No changes to a local sandbox runtime (none ships in rho), `internal/session`,
+  or `internal/daemon`.
 
 ### Required behavior
 
@@ -65,5 +66,5 @@ reporting** — is fully feasible and safe (non-TUI) and is adopted here.
 
 - `go test ./...` full suite.
 - `make vet`, `make lint`, `rho verify`.
-- Focused `internal/feature/evalloop` tests.
+- Focused `internal/features/evalloop` tests.
 - markdownlint on this document.

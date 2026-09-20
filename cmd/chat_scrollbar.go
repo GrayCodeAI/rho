@@ -18,10 +18,13 @@ const (
 )
 
 // scrollbarThumbStyle — Talon Gold thumb so it reads as a brand control.
-var (
-	scrollbarThumbStyle = lipgloss.NewStyle().Foreground(rhoColor)
-	scrollbarTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-)
+func scrollbarThumbStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(rhoColor)
+}
+
+func scrollbarTrackStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(textDisabled)
+}
 
 // chatHasOverflow reports whether chat content exceeds the viewport height.
 func (m chatModel) chatHasOverflow() bool {
@@ -46,6 +49,9 @@ func (m chatModel) chatScrollbarVisible() bool {
 func (m chatModel) chatViewportWidth(totalWidth int) int {
 	if totalWidth <= 0 {
 		return 0
+	}
+	if mainWidth := m.chatMainWidth(totalWidth); mainWidth != totalWidth {
+		totalWidth = mainWidth
 	}
 	if m.chatHasOverflow() && totalWidth > scrollbarWidth {
 		return totalWidth - scrollbarWidth
@@ -113,13 +119,13 @@ func (m chatModel) renderScrollbarHeight(vpH int) string {
 	var sb strings.Builder
 	for row := 0; row < vpH; row++ {
 		if row >= thumbTop && row <= thumbBottom {
-			sb.WriteString(scrollbarThumbStyle.Render(scrollbarThumbGlyph))
+			sb.WriteString(scrollbarThumbStyle().Render(scrollbarThumbGlyph))
 		} else if row == 0 {
-			sb.WriteString(scrollbarTrackStyle.Render(scrollbarTopGlyph))
+			sb.WriteString(scrollbarTrackStyle().Render(scrollbarTopGlyph))
 		} else if row == vpH-1 {
-			sb.WriteString(scrollbarTrackStyle.Render(scrollbarBottomGlyph))
+			sb.WriteString(scrollbarTrackStyle().Render(scrollbarBottomGlyph))
 		} else {
-			sb.WriteString(scrollbarTrackStyle.Render(scrollbarTrackGlyph))
+			sb.WriteString(scrollbarTrackStyle().Render(scrollbarTrackGlyph))
 		}
 		if row < vpH-1 {
 			sb.WriteByte('\n')
@@ -164,12 +170,14 @@ func (m chatModel) renderChatPane() string {
 	chatView = strings.Join(lines, "\n")
 
 	if !m.chatScrollbarVisible() {
-		return padToHeight(chatView, origVpH)
+		chatView = padToHeight(chatView, origVpH)
+		return m.joinChatSidebar(chatView, origVpH)
 	}
 
 	scrollbar := m.renderScrollbarHeight(origVpH)
 	if scrollbar == "" {
-		return padToHeight(chatView, origVpH)
+		chatView = padToHeight(chatView, origVpH)
+		return m.joinChatSidebar(chatView, origVpH)
 	}
 
 	targetW := m.viewport.Width()
@@ -196,6 +204,34 @@ func (m chatModel) renderChatPane() string {
 		if i < len(chatLines)-1 {
 			out.WriteByte('\n')
 		}
+	}
+	return m.joinChatSidebar(out.String(), origVpH)
+}
+
+func (m chatModel) joinChatSidebar(chatView string, height int) string {
+	sidebarW := m.chatSidebarWidth(m.width)
+	if sidebarW == 0 {
+		return chatView
+	}
+	mainW := m.viewport.Width()
+	if mainW <= 0 {
+		mainW = m.chatMainWidth(m.width)
+	}
+	lines := strings.Split(padToHeight(chatView, height), "\n")
+	sidebar := strings.Split(m.renderSessionSidebar(sidebarW, height), "\n")
+	divider := scrollbarTrackStyle().Render("│")
+	var out strings.Builder
+	for i := 0; i < height; i++ {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		line := lines[i]
+		if w := visibleWidth(line); w < mainW {
+			line += strings.Repeat(" ", mainW-w)
+		}
+		out.WriteString(line)
+		out.WriteString(divider)
+		out.WriteString(sidebar[i])
 	}
 	return out.String()
 }

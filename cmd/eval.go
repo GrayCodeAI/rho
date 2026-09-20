@@ -10,8 +10,8 @@ import (
 	"time"
 
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
-	"github.com/GrayCodeAI/rho/internal/feature/eval"
-	"github.com/GrayCodeAI/rho/internal/feature/evalloop"
+	"github.com/GrayCodeAI/rho/internal/features/eval"
+	"github.com/GrayCodeAI/rho/internal/features/evalloop"
 	"github.com/GrayCodeAI/rho/internal/tool"
 	"github.com/spf13/cobra"
 )

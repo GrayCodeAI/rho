@@ -430,6 +430,9 @@ func TestPluginToolAdapter(t *testing.T) {
 	if adapter.Name() != "plugin__test-plugin__echo" {
 		t.Errorf("expected name 'plugin__test-plugin__echo', got %q", adapter.Name())
 	}
+	if !adapter.Untrusted() {
+		t.Fatal("plugin tools must be marked untrusted for permission evaluation")
+	}
 }
 
 func TestPluginStatus(t *testing.T) {

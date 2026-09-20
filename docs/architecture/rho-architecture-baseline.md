@@ -71,8 +71,9 @@ The graph is intentionally directional:
 - Native-compaction capability contracts use `eagle/llm`; Flux
   request translation remains inside `internal/provider/gateway`, keeping the
   engine layer independent of the provider adapter package for this path.
-- Container-required state and its executor are owned by `ToolService` and
-  read through synchronized snapshots, including asynchronous TUI retry.
+- Agent commands execute directly on the host. There is no container executor
+  or product sandbox runtime; safety is provided by the permission engine,
+  path guard, trust policy, and destructive-command hard blocks.
 - `GraphAwareBudget` reads Harrier through `HarrierBridge`; its graph-budget path no
   longer imports Harrier engine or storage implementation types directly.
 - `CodeMemoryLinker` also routes node search, edge creation, and file-anchor

@@ -83,7 +83,7 @@ it does not duplicate the registry's Python implementation.
 
 ### 3. Transparent preference model
 
-Rho already has `internal/feature/taste` with confidence, sample count,
+Rho already has `internal/features/taste` with confidence, sample count,
 decay, project identity, merge, reset, prompt projection, and accept/edit
 signals. No second preference database was created. The user-facing model and
 policy are documented in `docs/user-guide/26-learned-preferences.md`:

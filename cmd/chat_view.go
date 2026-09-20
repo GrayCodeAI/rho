@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"regexp"
 	"strings"
@@ -302,7 +303,10 @@ func (m *chatModel) primeInitialViewportContent() {
 }
 
 func (m *chatModel) renderViewportContentForLayout(viewWidth int) (string, int, int) {
-	contentWidth := viewWidth
+	contentWidth := m.viewport.Width()
+	if contentWidth <= 0 {
+		contentWidth = m.chatViewportWidth(viewWidth)
+	}
 	if contentWidth < 20 {
 		contentWidth = 80
 	}
@@ -314,7 +318,7 @@ func (m *chatModel) renderViewportContentForLayout(viewWidth int) (string, int, 
 	// Re-render once at the final width so wrapping, line counting, and
 	// scrollbar state all describe the same layout.
 	if m.viewport.Height() > 0 && contentLines > m.viewport.Height() && viewWidth >= 20 {
-		narrowWidth := viewWidth - scrollbarWidth
+		narrowWidth := contentWidth - scrollbarWidth
 		if narrowWidth < 1 {
 			narrowWidth = 1
 		}
@@ -362,7 +366,6 @@ func (m chatModel) View() tea.View {
 		slashOpen := m.slashMenuOpen()
 		footerW := m.footerContentWidth(totalW)
 		bottomBar.WriteString(m.finishFooterLine("", totalW) + "\n")
-		leftRendered := renderContainerFooterLeft(m)
 		modelRendered, _, ctxRendered, ctxVisLen := m.renderConnectionStatusSplit()
 		rightLine := modelRendered
 		if ctxVisLen > 0 {
@@ -371,7 +374,9 @@ func (m chatModel) View() tea.View {
 			}
 			rightLine += ctxRendered
 		}
-		topRow := layoutFooterRow(leftRendered, rightLine, footerW)
+		// Keep workspace path/branch in the compact bottom status bar only;
+		// the upper chrome is reserved for connection state.
+		topRow := layoutFooterRow("", rightLine, footerW)
 		bottomBar.WriteString(m.finishFooterLine(topRow, totalW) + "\n")
 		if m.manualCompacting {
 			compactLine := clipFooterLine(m.renderCompactProgressPanel(footerW), footerW)
@@ -402,7 +407,7 @@ func (m chatModel) View() tea.View {
 		}
 		if m.ghostText != nil {
 			if ghost := m.ghostText.Get(); ghost != "" && m.input.Value() == "" {
-				ghostLine := ghostHintStyle.Render("  → " + ghost + " (Tab to accept)")
+				ghostLine := ghostHintStyle().Render("  → " + ghost + " (Tab to accept)")
 				bottomBar.WriteString(m.finishFooterLine(ghostLine, totalW) + "\n")
 			}
 		}
@@ -547,23 +552,70 @@ func renderPermissionBox(summary string, width int, timeoutAt time.Time) string 
 		}
 	}
 	body := lipgloss.JoinVertical(lipgloss.Left, bodyParts...)
-	options := lipgloss.NewStyle().Foreground(rhoColor).Render("[y] allow once   [n] deny   [a] always allow tool   [d] always deny tool")
-	hint := lipgloss.NewStyle().Foreground(textMuted).Render("Esc cancels · prompt times out after 5 minutes")
+	options := lipgloss.NewStyle().Foreground(rhoColor).Render(strings.Join([]string{
+		"[y] allow once     [n] deny once",
+		"[s] allow this action for session",
+		"[d] deny this tool for session",
+		"[p] allow exact for project    [x] deny exact for project",
+	}, "\n"))
+	hint := lipgloss.NewStyle().Foreground(textMuted).Render("Session rules reset on exit · Project rules persist · Esc denies · 5m timeout")
 
+	return renderPromptCard(title, body, options, hint, warnAmber, width, timeoutAt)
+}
+
+// renderApprovalBox uses the same keyboard-first interaction language as the
+// normal permission prompt, while making the extra high-risk checkpoint
+// visually distinct.
+func renderApprovalBox(summary string, width int, timeoutAt time.Time) string {
+	title := lipgloss.NewStyle().Foreground(errorCoral).Bold(true).Render(icons.Alert() + " High-risk approval required")
+	body := renderPromptBody(summary, width)
+	options := lipgloss.NewStyle().Foreground(rhoColor).Render(strings.Join([]string{
+		"[y] approve once     [n] deny once",
+		"[s] approve category for session",
+		"[5] approve next 5 actions",
+	}, "\n"))
+	hint := lipgloss.NewStyle().Foreground(textMuted).Render("Esc denies · expires after 5 minutes")
+	return renderPromptCard(title, body, options, hint, errorCoral, width, timeoutAt)
+}
+
+func renderCredentialBox(summary string, width int, timeoutAt time.Time) string {
+	title := lipgloss.NewStyle().Foreground(warnAmber).Bold(true).Render(icons.Key() + " Credential access required")
+	body := renderPromptBody(summary, width)
+	options := lipgloss.NewStyle().Foreground(rhoColor).Render("[y] allow access     [n] deny access")
+	hint := lipgloss.NewStyle().Foreground(textMuted).Render("Credentials are never shown in the transcript · Esc denies")
+	return renderPromptCard(title, body, options, hint, warnAmber, width, timeoutAt)
+}
+
+func renderQuestionBox(question string, width int, timeoutAt time.Time) string {
+	title := lipgloss.NewStyle().Foreground(successTeal).Bold(true).Render(icons.HelpCircle() + " Input required")
+	body := renderPromptBody(question, width)
+	options := lipgloss.NewStyle().Foreground(rhoColor).Render("Type your answer · [Enter] submit · [Esc] deny")
+	hint := lipgloss.NewStyle().Foreground(textMuted).Render("No answer is sent if the prompt expires")
+	return renderPromptCard(title, body, options, hint, successTeal, width, timeoutAt)
+}
+
+func renderPromptBody(content string, width int) string {
+	bodyWidth := width - 10
+	if bodyWidth < 20 {
+		bodyWidth = 20
+	}
+	return lipgloss.NewStyle().Foreground(textWhite).Render(wrapText(content, bodyWidth, 0))
+}
+
+// renderPromptCard is the shared shell for all blocking approval cards. The
+// content differs by policy layer, but width safety, countdown placement, and
+// visual hierarchy must remain identical.
+func renderPromptCard(title, body, options, hint string, border color.Color, width int, timeoutAt time.Time) string {
 	rows := []string{title, "", body}
-	// Countdown bar — only when a deadline is active.
 	if !timeoutAt.IsZero() {
-		bar := renderCountdownBar(timeoutAt, width-10)
-		rows = append(rows, "", bar)
+		rows = append(rows, "", renderCountdownBar(timeoutAt, width-10))
 	}
 	rows = append(rows, "", options, hint)
-
 	inner := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	// Bordered box with amber highlight so the prompt stands out in scrollback.
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(warnAmber).
-		Background(lipgloss.Color("#3A2A00")).
+		BorderForeground(border).
+		Background(permissionBg).
 		Padding(0, 1).
 		Render(inner)
 	return lipgloss.NewStyle().MaxWidth(width - 4).Render(box)
@@ -574,7 +626,7 @@ func renderPermissionBox(summary string, width int, timeoutAt time.Time) string 
 // teal → amber → coral as the deadline approaches.
 // Includes text label for accessibility (screen readers).
 func renderCountdownBar(timeoutAt time.Time, width int) string {
-	const totalDuration = 5 * time.Minute
+	const totalDuration = interactivePromptTimeout
 	if width < 10 {
 		width = 20
 	}
@@ -614,9 +666,9 @@ func renderCountdownBar(timeoutAt time.Time, width int) string {
 
 // renderDiffSummary renders a diff summary line with colored +/- indicators.
 func renderDiffSummary(diffLine string, width int) string {
-	addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("46"))  // green
-	delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
-	fileStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Italic(true)
+	addStyle := lipgloss.NewStyle().Foreground(doneGreen)
+	delStyle := lipgloss.NewStyle().Foreground(errorCoral)
+	fileStyle := lipgloss.NewStyle().Foreground(textMuted).Italic(true)
 
 	// Parse "diff <file>: +N -N lines"
 	parts := strings.SplitN(diffLine, ":", 2)
@@ -643,8 +695,8 @@ func renderReflectionBox(reflection string, width int) string {
 	}
 
 	titleStyle := lipgloss.NewStyle().Foreground(rhoColor).Bold(true)
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true) // blue
-	contentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))         // light gray
+	labelStyle := lipgloss.NewStyle().Foreground(infoSky).Bold(true)
+	contentStyle := lipgloss.NewStyle().Foreground(textPrimary)
 
 	var b strings.Builder
 	lines := strings.Split(reflection, "\n")

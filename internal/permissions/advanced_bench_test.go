@@ -18,13 +18,3 @@ func BenchmarkClassifier(b *testing.B) {
 		}
 	}
 }
-
-func BenchmarkAutoModeState(b *testing.B) {
-	a := NewAutoModeState()
-	a.Record("Bash", "git status", true)
-	a.Record("Bash", "rm -rf /", false)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		a.ShouldAutoAllow("Bash", "git status")
-	}
-}

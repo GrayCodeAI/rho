@@ -73,9 +73,9 @@ documentation section.
 - [ ] **Security headers** — Verify `X-Content-Type-Options`,
   `X-Frame-Options`, and `Content-Security-Policy` headers are present
   (enabled by default via the `security-headers` feature flag).
-- [ ] **Sandbox mode** — Tool execution uses OS-level sandboxing by default.
-  For additional isolation, configure Docker/Podman container sandboxing.
-  Enable `sandbox-v2` for the experimental Landlock v2 profile.
+- [x] **Execution model** — Rho runs tools directly on the host under its
+  permission, path-safety, trust, and worktree controls. Docker/Podman is not
+  required and is not an execution backend for the CLI.
 - [ ] **No CGO** — The binary is built with `CGO_ENABLED=0` for a static binary.
   Verify the deployed binary has no dynamic library dependencies:
   ```bash

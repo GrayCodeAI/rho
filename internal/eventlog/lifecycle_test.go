@@ -11,7 +11,7 @@ func TestNewEventTypesKnown(t *testing.T) {
 	newTypes := []Type{
 		CompactionStart, CompactionPrune, CompactionEnd, CompactionSummary,
 		SessionEndSeed, TodoWrite, RequestHeader, HookInvoked, HookResult,
-		FeedbackRecord, GoalChange, PermissionPreset, SandboxMode,
+		FeedbackRecord, GoalChange, PermissionPreset,
 		ScheduleChange, SessionTitle, SessionTitleLLMRequest, SubagentDescriptor,
 		AgentPresetSelected, AgentInboxSpliced, CommandRun, CommandDone,
 		ToolWorkflowAgentStart, ToolWorkflowAgentEnd,
@@ -38,7 +38,6 @@ func TestNewEventTypesKnown(t *testing.T) {
 		"feedback.record":                 FeedbackRecord,
 		"goal.change":                     GoalChange,
 		"permission.preset":               PermissionPreset,
-		"sandbox.mode":                    SandboxMode,
 		"schedule.change":                 ScheduleChange,
 		"schedule.create":                 ScheduleCreate,
 		"schedule.update":                 ScheduleUpdate,
@@ -99,8 +98,7 @@ func TestLifecycleEventsRoundTrip(t *testing.T) {
 		Thumb:    "down",
 	})
 	l.AppendGoalChange("Refactor the auth module", true)
-	l.AppendPermissionPreset("sandbox_exec", true)
-	l.AppendSandboxMode("strict")
+	l.AppendPermissionPreset("standard_exec", true)
 	l.AppendScheduleChange("0 8 * * MON-FRI")
 	l.AppendSessionTitle("Refactor auth module")
 	l.AppendSessionTitleLLMRequest("deepseek-chat")
@@ -120,8 +118,8 @@ func TestLifecycleEventsRoundTrip(t *testing.T) {
 	l.AppendWebDeepSeekSearch("how to port TypeScript to Go")
 
 	events := l.Snapshot()
-	if len(events) != 27 {
-		t.Fatalf("expected 27 events, got %d", len(events))
+	if len(events) != 26 {
+		t.Fatalf("expected 26 events, got %d", len(events))
 	}
 
 	wire, err := MarshalWire(events)
@@ -132,8 +130,8 @@ func TestLifecycleEventsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeWire: %v", err)
 	}
-	if len(decoded) != 27 {
-		t.Fatalf("decoded %d events, want 27", len(decoded))
+	if len(decoded) != 26 {
+		t.Fatalf("decoded %d events, want 26", len(decoded))
 	}
 
 	// Spot-check a few payloads.
@@ -171,8 +169,8 @@ func TestLifecycleEventsRoundTrip(t *testing.T) {
 		t.Fatalf("PermissionPreset payload = %T %+v", decoded[12].Data, decoded[12].Data)
 	}
 
-	if f, ok := decoded[24].Data.(CodeDispatchFact); !ok || f.Language != "go" {
-		t.Fatalf("ToolCodeDispatch payload = %T %+v", decoded[24].Data, decoded[24].Data)
+	if f, ok := decoded[23].Data.(CodeDispatchFact); !ok || f.Language != "go" {
+		t.Fatalf("ToolCodeDispatch payload = %T %+v", decoded[23].Data, decoded[23].Data)
 	}
 }
 
@@ -187,57 +185,5 @@ func TestNewEventTypesValidate(t *testing.T) {
 	}
 	if err := Validate(events); err != nil {
 		t.Fatalf("Validate: %v", err)
-	}
-}
-
-func TestSandboxModeFact_ClosedVocabulary(t *testing.T) {
-	// Valid modes and sources
-	validModes := []string{"strict", "workspace", "off"}
-	validSources := []SandboxModeSource{"", SandboxModeSourceUser, SandboxModeSourceDelegation}
-
-	for _, m := range validModes {
-		for _, s := range validSources {
-			fact := SandboxModeFact{Mode: m, Source: s}
-			if !fact.Valid() {
-				t.Errorf("expected fact %+v to be valid", fact)
-			}
-		}
-	}
-
-	// Invalid modes
-	invalidModes := []string{"", "read-only", "workspace-write", "danger-full-access", "admin", "custom"}
-	for _, m := range invalidModes {
-		fact := SandboxModeFact{Mode: m, Source: SandboxModeSourceUser}
-		if fact.Valid() {
-			t.Errorf("expected invalid mode %q to fail validation", m)
-		}
-	}
-
-	// Invalid sources
-	invalidSources := []SandboxModeSource{"other", "admin", "cli", "system"}
-	for _, s := range invalidSources {
-		fact := SandboxModeFact{Mode: "strict", Source: s}
-		if fact.Valid() {
-			t.Errorf("expected invalid source %q to fail validation", s)
-		}
-	}
-
-	// Validate rejects invalid SandboxMode fact
-	invalidEvents := []Event{
-		{Type: SandboxMode, Seq: 1, At: time.Now(), Data: SandboxModeFact{Mode: "invalid-mode"}},
-	}
-	if err := Validate(invalidEvents); err == nil {
-		t.Errorf("expected Validate to reject invalid sandbox mode")
-	}
-
-	// DecodeWire rejects invalid SandboxMode
-	wire := []WireEvent{
-		{
-			Type: SandboxMode, Seq: 1, At: time.Now(),
-			Data: []byte(`{"mode":"invalid","source":"user"}`),
-		},
-	}
-	if _, err := DecodeWire(wire); err == nil {
-		t.Errorf("expected DecodeWire to reject invalid sandbox mode")
 	}
 }

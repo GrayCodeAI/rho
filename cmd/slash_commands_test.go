@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	commandfeature "github.com/GrayCodeAI/rho/internal/features/commands"
 )
 
 func TestSlashCommands_NotEmpty(t *testing.T) {
@@ -32,6 +34,16 @@ func TestSlashCommands_ContainsEssentials(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("slashCommands() missing essential command %q", e)
+		}
+	}
+}
+
+func TestBuiltInCommandsHaveHandlers(t *testing.T) {
+	t.Helper()
+	for _, name := range commandfeature.BuiltInNames() {
+		trimmed := strings.TrimPrefix(name, "/")
+		if _, ok := subcommandRegistry.Lookup(trimmed); !ok {
+			t.Errorf("built-in command %s is advertised but has no registered handler", name)
 		}
 	}
 }

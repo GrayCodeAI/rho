@@ -9,7 +9,7 @@ Constraint: docs-only. No new benchmark framework; infra already exists.
 
 - `make bench` (`go test -bench=. -benchmem -count=3`) in `Makefile:100-101`.
 - `internal/bench/suite.go` (eco suite runner + report formatter).
-- `internal/feature/eval/` (model benchmark tasks, runner, CSV export).
+- `internal/features/eval/` (model benchmark tasks, runner, CSV export).
 - Session load/save benchmarks (`internal/session/benchmark_test.go`).
 
 ## Decision

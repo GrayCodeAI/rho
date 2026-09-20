@@ -1005,14 +1005,6 @@ func (s *Session) agentLoop(ctx context.Context, ch chan<- StreamEvent) {
 			loopDet.RecordStep(ldNames, ldInputs, ldOutputs)
 		}
 
-		// Sandbox: notify about staged changes after all tools in this turn
-		if s.Tools().Sandbox() != nil && s.Tools().Sandbox().IsEnabled() {
-			pending := s.Tools().Sandbox().List()
-			if len(pending) > 0 {
-				emit(StreamEvent{Type: "content", Content: fmt.Sprintf("\n[%d change(s) staged for review]", len(pending))})
-			}
-		}
-
 		// Auto-remember: save conversation context and insights to memory after each turn
 		if s.MemorySvc().Memory() != nil {
 			userMsg := ""

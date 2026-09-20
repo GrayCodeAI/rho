@@ -9,11 +9,13 @@ package metrics
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
 // PermissionMetrics holds atomic counters for permission decisions.
 type PermissionMetrics struct {
+	mu sync.RWMutex // protects the dynamically keyed bypass/governance maps
 	// decisions counts outcomes by reason label (allow/deny/ask).
 	decisions map[string]*int64
 	// bypass counts bypass activations, keyed by scope.
@@ -58,6 +60,8 @@ func (pm *PermissionMetrics) RecordDecision(outcome, reason string) {
 // "network", "all"). The scope is the bypass grant's scope or "all" when
 // unbounded.
 func (pm *PermissionMetrics) RecordBypass(scope string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	if v, ok := pm.bypass[scope]; ok {
 		atomic.AddInt64(v, 1)
 		return
@@ -69,6 +73,8 @@ func (pm *PermissionMetrics) RecordBypass(scope string) {
 // RecordGovernanceDenial increments the governance-ceiling denial counter for
 // a tool name.
 func (pm *PermissionMetrics) RecordGovernanceDenial(tool string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	if v, ok := pm.governanceDenials[tool]; ok {
 		atomic.AddInt64(v, 1)
 		return
@@ -93,6 +99,8 @@ func (pm *PermissionMetrics) Snapshot() map[string]int64 {
 	for k, v := range pm.decisions {
 		out["decision."+k] = atomic.LoadInt64(v)
 	}
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 	for k, v := range pm.bypass {
 		out["bypass."+k] = atomic.LoadInt64(v)
 	}
@@ -113,6 +121,8 @@ func (pm *PermissionMetrics) Format() string {
 			out += fmt.Sprintf("    %s: %d\n", k, v)
 		}
 	}
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
 	if len(pm.bypass) > 0 {
 		out += "  Bypass activations:\n"
 		for k, v := range pm.bypass {

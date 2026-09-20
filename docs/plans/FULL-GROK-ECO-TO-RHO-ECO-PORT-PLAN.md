@@ -129,7 +129,7 @@ grok-eco/grok-build  (one Rust workspace)
 | `xai-grok-plugin-marketplace` | 5.3k | Marketplace | rho + community-skills | Port | L | |
 | `xai-grok-shared` | 5.2k | Shared utils | rho | N/A | — | Absorb |
 | `xai-grok-test-support` | 4.6k | Test harness | rho testutil | Partial | M | |
-| `xai-grok-sandbox` | 3.9k | OS sandbox profiles | rho sandbox | Port | L | |
+| `xai-grok-sandbox` | 3.9k | OS sandbox profiles | rho host permissions | Port | L | |
 | `xai-grok-voice` | 2.7k | Streaming STT | rho | Partial | M | whisper path exists |
 | `xai-acp-lib` | 2.3k | ACP protocol | rho acp | Port | L | |
 | `xai-grok-mermaid` | 2.2k | Mermaid→PNG | rho | Port | M | |

@@ -248,18 +248,19 @@ func runExec(_ *cobra.Command, args []string) error {
 	// RHO_GHA_TRUST_EVENT=1.
 	if ghaCtx.Active && !ghaCtx.Trusted {
 		const ceiling = safety.AutonomyBasic
-		if sess.PermSvc().Autonomy() > ceiling {
+		if sess.PermSvc().RuntimeState().Autonomy > ceiling {
 			fmt.Fprintf(os.Stderr, "%s\n", auditTint(fmt.Sprintf("rho: untrusted GitHub event (author_association=%q); capping autonomy at %s", ghaCtx.AuthorAssociation, ceiling), warnAmber))
 			sess.PermSvc().SetAutonomy(ceiling)
 		}
 	}
 
-	// In exec mode, auto-approve based on autonomy level (no TUI to ask)
+	// Exec has no interactive approval UI. The central PermissionEngine already
+	// auto-allows calls permitted by the active profile; reaching this callback
+	// means a prompt is required, so fail closed instead of re-implementing
+	// autonomy with a second policy implementation.
 	sess.PermSvc().SetPermissionFn(func(req safety.PermissionRequest) {
-		cfg := safety.PresetConfig(sess.PermSvc().Autonomy())
-		allowed := !cfg.NeedsPermission(req.ToolName, false)
 		if req.Response != nil {
-			req.Response <- allowed
+			req.Response <- false
 		}
 	})
 
@@ -941,10 +942,8 @@ func execOnceInWorktree(prompt string, attemptIdx int) (*ExecResult, error) {
 		sess.PermSvc().SetAutonomy(safety.AutonomyFull)
 	}
 	sess.PermSvc().SetPermissionFn(func(req safety.PermissionRequest) {
-		cfg := safety.PresetConfig(sess.PermSvc().Autonomy())
-		allowed := !cfg.NeedsPermission(req.ToolName, false)
 		if req.Response != nil {
-			req.Response <- allowed
+			req.Response <- false
 		}
 	})
 

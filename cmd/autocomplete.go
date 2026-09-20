@@ -434,7 +434,6 @@ func (ac *Autocompleter) completeFlags(prefix string) []Suggestion {
 		{"--output-format", "Output format"},
 		{"--auto-commit", "Auto-commit changes"},
 		{"--watch", "Watch for file changes"},
-		{"--vibe", "Vibe coding mode"},
 		{"--power", "Power level 1-10"},
 		{"--timeout", "Time budget"},
 		{"--session-id", "Session ID"},

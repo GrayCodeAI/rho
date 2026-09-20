@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/bubbles/v2/viewport"
 )
@@ -20,6 +21,19 @@ func TestRenderDisplayMessage_ErrorLabelIsCapitalized(t *testing.T) {
 	}
 	if strings.Contains(got, "error: Rate limited by the API provider.") {
 		t.Fatalf("renderDisplayMessage() = %q, contains lowercase error label", got)
+	}
+}
+
+func TestRenderDisplayMessage_QuestionUsesPromptCard(t *testing.T) {
+	got := renderDisplayMessage(
+		displayMsg{role: "question", content: "Continue?", timeoutAt: time.Now().Add(time.Minute)},
+		0,
+		nil,
+		80,
+		nil,
+	)
+	if !strings.Contains(got, "Input required") || !strings.Contains(got, "Enter") {
+		t.Fatalf("question prompt was not rendered as an actionable card: %q", got)
 	}
 }
 

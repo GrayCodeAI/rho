@@ -3,7 +3,7 @@ package cmd
 import (
 	lipgloss "charm.land/lipgloss/v2"
 
-	"github.com/GrayCodeAI/rho/internal/feature/shellmode"
+	"github.com/GrayCodeAI/rho/internal/features/shellmode"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
 )
 
@@ -22,12 +22,21 @@ type InputIndicator struct {
 	current InputClass
 }
 
-var (
-	indicatorShell   = lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
-	indicatorAgent   = lipgloss.NewStyle().Foreground(lipgloss.Color("200")).Bold(true)
-	indicatorSlash   = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
-	indicatorNeutral = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-)
+func inputIndicatorShellStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(warnAmber).Bold(true)
+}
+
+func inputIndicatorAgentStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(successTeal).Bold(true)
+}
+
+func inputIndicatorSlashStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(rhoColor).Bold(true)
+}
+
+func inputIndicatorNeutralStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(textDisabled)
+}
 
 // Classify determines the input class from the current buffer text and mode.
 func (ind *InputIndicator) Classify(input string, mode shellmode.Mode) InputClass {
@@ -70,13 +79,13 @@ func (ind *InputIndicator) Classify(input string, mode shellmode.Mode) InputClas
 func (ind *InputIndicator) Render() string {
 	switch ind.current {
 	case InputClassShell:
-		return indicatorShell.Render(icons.CircleFilled())
+		return inputIndicatorShellStyle().Render(icons.CircleFilled())
 	case InputClassAgent:
-		return indicatorAgent.Render(icons.CircleFilled())
+		return inputIndicatorAgentStyle().Render(icons.CircleFilled())
 	case InputClassSlash:
-		return indicatorSlash.Render(icons.CircleFilled())
+		return inputIndicatorSlashStyle().Render(icons.CircleFilled())
 	default:
-		return indicatorNeutral.Render(icons.CircleOutline())
+		return inputIndicatorNeutralStyle().Render(icons.CircleOutline())
 	}
 }
 
@@ -84,12 +93,12 @@ func (ind *InputIndicator) Render() string {
 func (ind *InputIndicator) Label() string {
 	switch ind.current {
 	case InputClassShell:
-		return indicatorShell.Render("SHELL")
+		return inputIndicatorShellStyle().Render("SHELL")
 	case InputClassAgent:
-		return indicatorAgent.Render("AGENT")
+		return inputIndicatorAgentStyle().Render("AGENT")
 	case InputClassSlash:
-		return indicatorSlash.Render("CMD")
+		return inputIndicatorSlashStyle().Render("CMD")
 	default:
-		return indicatorNeutral.Render("...")
+		return inputIndicatorNeutralStyle().Render("...")
 	}
 }

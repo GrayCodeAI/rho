@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/GrayCodeAI/rho/internal/engine/safety"
+	chatfeature "github.com/GrayCodeAI/rho/internal/features/chat"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textarea"
@@ -19,8 +19,8 @@ import (
 	"github.com/GrayCodeAI/rho/internal/bridge/sessioncapture"
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	"github.com/GrayCodeAI/rho/internal/engine"
-	"github.com/GrayCodeAI/rho/internal/feature/shellmode"
-	"github.com/GrayCodeAI/rho/internal/feature/taste"
+	"github.com/GrayCodeAI/rho/internal/features/shellmode"
+	"github.com/GrayCodeAI/rho/internal/features/taste"
 	"github.com/GrayCodeAI/rho/internal/plugin"
 	"github.com/GrayCodeAI/rho/internal/session"
 	"github.com/GrayCodeAI/rho/internal/system/staleness"
@@ -78,12 +78,15 @@ var (
 	slashSelCmdStyle  = lipgloss.NewStyle().Foreground(rhoColor).Bold(true)
 	slashSelDescStyle = lipgloss.NewStyle().Foreground(rhoColor)
 	inputBorderStyle  = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true, false, true, false).BorderForeground(borderDim)
-	ghostHintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Italic(true)
 
 	// Backwards-compatible alias for callers that still use the old name.
 	// New code should use the purpose-named constants in theme.go.
 	dimColor = textDisabled
 )
+
+func ghostHintStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(textDisabled).Italic(true)
+}
 
 // rhoSpinnerFrames feeds the bubbles spinner (matches BrailleSpinner default).
 var rhoSpinnerFrames = rhoSpinnerGlyphs
@@ -165,9 +168,15 @@ type (
 	toolResultMsg              struct{ name, content string }
 	permissionAskMsg           struct{ req safety.PermissionRequest }
 	permissionPromptTimeoutMsg struct{ seq int }
-	thinkingMsg                string
-	blastRadiusMsg             struct{ message string }
-	askUserMsg                 struct {
+	promptCountdownTickMsg     struct{ generation uint64 }
+	approvalAskMsg             struct {
+		req      engine.ApprovalRequest
+		response chan engine.ApprovalResponse
+	}
+	approvalPromptTimeoutMsg struct{ seq int }
+	thinkingMsg              string
+	blastRadiusMsg           struct{ message string }
+	askUserMsg               struct {
 		question string
 		response chan string
 	}
@@ -184,6 +193,8 @@ type displayMsg struct {
 	content   string
 	timeoutAt time.Time // deadline for permission prompts (zero = none)
 }
+
+const interactivePromptTimeout = 5 * time.Minute
 
 type progRef struct {
 	mu sync.Mutex
@@ -216,29 +227,37 @@ type chatModel struct {
 	partial                    *strings.Builder
 	waiting                    bool
 	streamCancelled            bool // user cancelled; suppress late streamDone side effects
-	turnSawThinking            bool // current turn received hidden reasoning
 	arrowSeq                   int
 	pendingArrow               *tea.KeyMsg
 	arrowBurstActive           bool
 	lastArrowTime              time.Time
 	processingGenuineArrow     bool
-	turnHadAssistantOutput     bool                      // current turn produced assistant text
-	turnHadToolActivity        bool                      // current turn produced tool activity
-	messageQueue               []string                  // queued messages while agent is working
-	permReq                    *safety.PermissionRequest // pending permission prompt
+	turn                       chatfeature.TurnState
+	messageQueue               []string                   // queued messages while agent is working
+	permReq                    *safety.PermissionRequest  // pending permission prompt
+	permQueue                  []safety.PermissionRequest // approvals waiting behind the active prompt
 	permReqSeq                 int
-	permTimeoutAt              time.Time   // deadline for the active permission prompt (zero = none)
+	permTimeoutAt              time.Time // deadline for the active permission prompt (zero = none)
+	approvalReq                *approvalAskMsg
+	approvalQueue              []approvalAskMsg
+	approvalReqSeq             int
+	approvalTimeoutAt          time.Time
 	askReq                     *askUserMsg // pending ask_user prompt
+	askQueue                   []askUserMsg
 	askReqSeq                  int
+	askTimeoutAt               time.Time
 	credentialReq              *credentialAskMsg // pending credential prompt
+	credentialQueue            []credentialAskMsg
 	credentialReqSeq           int
 	credentialTimeoutAt        time.Time
+	promptGeneration           uint64 // invalidates stale countdown ticks across prompt transitions
 	pendingYOLOConfirm         bool   // user selected YOLO in the picker; awaiting typed confirmation
 	durabilityWarning          string // first WAL persistence failure, surfaced once to the user
 	walSeq                     uint64 // increments for each append; guards async WAL rotation
 	width                      int
 	height                     int
 	quitting                   bool
+	mascotEnabled              bool // inline RHO mascot is available in the active terminal
 	blinkClosed                bool
 	eyeFrame                   int
 	slashSel                   int
@@ -286,9 +305,7 @@ type chatModel struct {
 	lastCtrlC                    time.Time
 	supervisedPending            bool      // Ctrl+L guard: waiting for confirmation to land on Supervised
 	supervisedPendingAt          time.Time // when the pending confirmation was set
-	history                      []string
-	historyIdx                   int
-	historyDraft                 string // unsent text before navigating history
+	history                      chatfeature.History
 	lastCommand                  string // most recent slash command (for context-aware tips)
 	autoScroll                   bool   // whether viewport is pinned to bottom
 	streamFollow                 bool   // follow streaming output (Grok-style; toggle with /follow)
@@ -420,20 +437,9 @@ const maxDisplayMessages = 500
 // We trim in batches to avoid frequent reallocations.
 const messageTrimThreshold = 450
 
-// maxPromptHistory bounds the in-memory prompt history ring (M18: history
-// grew without bound across a long session).
-const maxPromptHistory = 200
-
-// pushHistory records a submitted prompt, capped to the most recent
-// maxPromptHistory entries.
+// pushHistory records a submitted prompt in the bounded domain history.
 func (m *chatModel) pushHistory(text string) {
-	m.history = append(m.history, text)
-	if len(m.history) > maxPromptHistory {
-		keep := len(m.history) - maxPromptHistory
-		m.history = append(m.history[:0], m.history[keep:]...)
-	}
-	m.historyIdx = len(m.history)
-	m.historyDraft = ""
+	m.history.Add(text)
 }
 
 // maxQueuedMessages bounds the queue of prompts entered while the agent is
@@ -456,35 +462,23 @@ func (m *chatModel) trimOldMessages() {
 	if len(m.messages) <= messageTrimThreshold {
 		return
 	}
-	// Keep the most recent maxDisplayMessages messages.
-	// Trim from the front, but keep the welcome message if present.
-	trimCount := len(m.messages) - maxDisplayMessages
-	if trimCount <= 0 {
+	projected := make([]chatfeature.Message, 0, len(m.messages))
+	for _, message := range m.messages {
+		projected = append(projected, chatfeature.Message{Role: message.role, Content: message.content})
+	}
+	trimmed, trimCount := chatfeature.TrimMessages(projected, messageTrimThreshold, maxDisplayMessages, "welcome")
+	if trimCount == 0 {
 		return
 	}
-
-	// Preserve a leading welcome message (index 0) if present — it is
-	// re-emitted ahead of the trim hint so the header survives long sessions.
+	kept := make([]displayMsg, 0, len(trimmed))
+	for _, message := range trimmed {
+		kept = append(kept, displayMsg{role: message.Role, content: message.Content})
+	}
+	m.messages = kept
 	startIdx := 0
-	if m.messages[0].role == "welcome" {
+	if len(projected) > 0 && projected[0].Role == "welcome" {
 		startIdx = 1
 	}
-
-	// Never trim past the end of the slice.
-	if startIdx+trimCount >= len(m.messages) {
-		return
-	}
-
-	trimmedHint := displayMsg{
-		role:    "system",
-		content: fmt.Sprintf("... %d earlier messages trimmed (use /export to save full history)", trimCount),
-	}
-	// Rebuild: preserved prefix (welcome) + hint + recent messages.
-	kept := make([]displayMsg, 0, len(m.messages)-trimCount+1)
-	kept = append(kept, m.messages[:startIdx]...)
-	kept = append(kept, trimmedHint)
-	kept = append(kept, m.messages[startIdx+trimCount:]...)
-	m.messages = kept
 	// Expansion state is keyed by message index; reindex the survivors so
 	// Enter-to-expand keeps targeting the right messages and stale keys for
 	// trimmed messages are pruned (M18: the map grew without bound).
@@ -550,13 +544,23 @@ func eyeFrameNextCmd(frame int, d time.Duration) tea.Cmd {
 }
 
 func permissionPromptTimeoutCmd(seq int) tea.Cmd {
-	return tea.Tick(5*time.Minute, func(time.Time) tea.Msg { return permissionPromptTimeoutMsg{seq: seq} })
+	return tea.Tick(interactivePromptTimeout, func(time.Time) tea.Msg { return permissionPromptTimeoutMsg{seq: seq} })
+}
+
+func approvalPromptTimeoutCmd(seq int) tea.Cmd {
+	return tea.Tick(interactivePromptTimeout, func(time.Time) tea.Msg { return approvalPromptTimeoutMsg{seq: seq} })
 }
 
 func askUserPromptTimeoutCmd(seq int) tea.Cmd {
-	return tea.Tick(5*time.Minute, func(time.Time) tea.Msg { return askUserPromptTimeoutMsg{seq: seq} })
+	return tea.Tick(interactivePromptTimeout, func(time.Time) tea.Msg { return askUserPromptTimeoutMsg{seq: seq} })
 }
 
 func credentialPromptTimeoutCmd(seq int) tea.Cmd {
-	return tea.Tick(5*time.Minute, func(time.Time) tea.Msg { return credentialPromptTimeoutMsg{seq: seq} })
+	return tea.Tick(interactivePromptTimeout, func(time.Time) tea.Msg { return credentialPromptTimeoutMsg{seq: seq} })
+}
+
+func promptCountdownTickCmd(generation uint64) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return promptCountdownTickMsg{generation: generation}
+	})
 }

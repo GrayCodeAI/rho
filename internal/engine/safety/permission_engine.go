@@ -16,6 +16,7 @@ import (
 	"github.com/GrayCodeAI/rho/internal/hooks"
 	"github.com/GrayCodeAI/rho/internal/observability/metrics"
 	"github.com/GrayCodeAI/rho/internal/permissions"
+	"github.com/GrayCodeAI/rho/internal/permissions/stableid"
 	"github.com/GrayCodeAI/rho/internal/tool"
 )
 
@@ -41,7 +42,6 @@ const (
 // Extracted from Session to keep the god object lean.
 type PermissionEngine struct {
 	Memory           *PermissionMemory
-	AutoMode         *permissions.AutoModeState
 	Classifier       *permissions.Classifier
 	BypassKill       *permissions.BypassKillswitch
 	Autonomy         AutonomyLevel
@@ -68,22 +68,32 @@ type PermissionEngine struct {
 	// Phase gates sequential task completion within the Implementing stage.
 	// 0 means no phase gating (default); 1+ means the model should complete
 	// Phase N before progressing to N+1.
-	Phase           int
-	Phases          int                     // total number of phases detected from tasks.md
-	convergeChecked bool                    // whether convergence has been checked this session
-	PromptFn        func(PermissionRequest) // callback to ask user
+	Phase    int
+	Phases   int                     // total number of phases detected from tasks.md
+	PromptFn func(PermissionRequest) // callback to ask user
 	// Governance is the POLICY ∩ PROFILE ceiling. It is evaluated before
 	// every other gate (hooks, spec stage, rules, autonomy, bypass) so no
 	// agent state or user-granted bypass can loosen an administrator-set
 	// ceiling. Nil means fail-open (no governance policy installed).
 	Governance *governance.Engine
-	// UnifiedGrants merges Memory, AutoMode, and optional ApprovalStore into one
-	// precedence-ordered view. When non-nil it replaces the separate
-	// Memory.Check + AutoMode.ShouldAutoAllow lookups in evaluateToolDecision.
+	// UnifiedGrants is the precedence-ordered view of session permission rules.
+	// When non-nil it replaces the direct Memory.Check lookup.
 	UnifiedGrants *permissions.UnifiedGrants
+	// ExactRules is the optional persisted project rule store. It is kept
+	// separate from session memory so durable rules are explicit and auditable.
+	ExactRules *permissions.StableRuleStore
 	// Profile is the per-flag autonomy profile consulted by the decision path.
-	// When non-nil its NeedsPermission replaces the flat AutonomyConfig check.
+	// When non-nil its NeedsPermission is the single autonomy policy path.
 	Profile *AutonomyProfile
+	// KnownTools is the registered execution surface. Built-in capability
+	// metadata is still required for rich policy decisions, but registered
+	// custom tools are legitimate and must not be mistaken for unregistered
+	// tools merely because they have no static policy entry.
+	KnownTools map[string]struct{}
+	// UntrustedTools are registered external tools (currently MCP). They may
+	// execute after an explicit remembered rule or user approval, but registry
+	// membership and autonomy never implicitly authorize them.
+	UntrustedTools map[string]struct{}
 	// neverAllow is the personal hard-ceiling rule set (deny rules that even
 	// YOLO + bypass cannot override). Parsed from settings.NeverAllow.
 	neverAllow []string
@@ -113,20 +123,15 @@ const (
 type DecisionReason string
 
 const (
-	ReasonNone              DecisionReason = ""
 	ReasonDryRun            DecisionReason = "dry_run"
 	ReasonHookDenied        DecisionReason = "hook_denied"
-	ReasonSandbox           DecisionReason = "sandbox"
 	ReasonSpecGate          DecisionReason = "spec_gate"
 	ReasonRuleDenied        DecisionReason = "rule_denied"
-	ReasonAutoModeDenied    DecisionReason = "auto_mode_denied"
 	ReasonRuleAllowed       DecisionReason = "rule_allowed"
-	ReasonAutoModeAllowed   DecisionReason = "auto_mode_allowed"
 	ReasonGrantAllowed      DecisionReason = "grant_allowed"
 	ReasonGrantDenied       DecisionReason = "grant_denied"
 	ReasonAutonomy          DecisionReason = "autonomy"
 	ReasonBypass            DecisionReason = "bypass"
-	ReasonClassifiedSafe    DecisionReason = "classified_safe"
 	ReasonUserPrompt        DecisionReason = "user_prompt"
 	ReasonPromptUnavailable DecisionReason = "prompt_unavailable"
 	ReasonGovernance        DecisionReason = "governance"
@@ -137,7 +142,6 @@ type Decision struct {
 	Outcome      DecisionOutcome
 	Reason       DecisionReason
 	Message      string
-	MatchedRule  string
 	Capabilities []Capability
 	Risk         RiskLevel
 	Revision     uint64
@@ -152,11 +156,23 @@ type PolicySnapshot struct {
 	Stage            SpecStage
 	DryRun           bool
 	SpecSlug         string
-	Phase            int
-	Phases           int
-	Revision         uint64
-	Rules            RuleSnapshot
-	AllowedDirs      []string
+	// SpecDone is the serialized completion bitmask for the parallel
+	// Specify/Design stages. It is intentionally an int at the snapshot
+	// boundary because the bitmask type is private to this package.
+	SpecDone       int
+	SpecAllowTests bool
+	Phase          int
+	Phases         int
+	Revision       uint64
+	Rules          RuleSnapshot
+	// ExactRules is the shared project-level exact-rule store. It is
+	// internally synchronized and must remain attached to child sessions.
+	ExactRules *permissions.StableRuleStore
+	// NeverAllow is the user's hard permission ceiling. It must travel with
+	// snapshots so child sessions and cross-goroutine evaluations cannot lose
+	// a deny rule that autonomy and bypass are forbidden to override.
+	NeverAllow  []string
+	AllowedDirs []string
 }
 
 // Snapshot returns a copy of the engine's request-relevant scalar policy.
@@ -168,16 +184,30 @@ func (pe *PermissionEngine) Snapshot() PolicySnapshot {
 	return PolicySnapshot{
 		Autonomy: pe.Autonomy, AutonomyExplicit: pe.AutonomyExplicit,
 		Stage: pe.Stage, DryRun: pe.DryRun,
-		SpecSlug: pe.SpecSlug, Phase: pe.Phase, Phases: pe.Phases, Revision: pe.Revision,
-		Rules: rules,
+		SpecSlug: pe.SpecSlug, SpecDone: int(pe.specDone), SpecAllowTests: pe.specAllowTests,
+		Phase: pe.Phase, Phases: pe.Phases, Revision: pe.Revision,
+		Rules: rules, ExactRules: pe.ExactRules, NeverAllow: pe.NeverAllow(),
 	}
 }
 
-// Copy returns a deep copy of the engine safe for cross-goroutine evaluation.
-// The copy shares read-only references (Memory, UnifiedGrants, Governance,
-// Classifier, BypassKill, Metrics, Profile) but has a zero-value mutex so it
-// can be used without locking. The PromptFn is preserved.
+// Copy returns an evaluation copy safe to construct without copying the
+// engine's mutex. Concurrency-safe services (Memory, UnifiedGrants,
+// Governance, Classifier, BypassKill, Metrics, and Profile) remain shared;
+// scalar policy fields and the never-allow slice are copied. PromptFn is
+// preserved.
 func (pe *PermissionEngine) Copy() *PermissionEngine {
+	if pe == nil {
+		return nil
+	}
+	return pe.clone()
+}
+
+// clone copies the evaluation configuration without copying the mutex. The
+// engine is intentionally composed of scalar policy state plus shared,
+// concurrency-safe services; keeping this in one place prevents Copy,
+// snapshot evaluation, and preview evaluation from drifting apart as new
+// policy fields are added.
+func (pe *PermissionEngine) clone() *PermissionEngine {
 	if pe == nil {
 		return nil
 	}
@@ -187,13 +217,16 @@ func (pe *PermissionEngine) Copy() *PermissionEngine {
 		Stage:            pe.Stage,
 		DryRun:           pe.DryRun,
 		SpecSlug:         pe.SpecSlug,
+		specDone:         pe.specDone,
 		Phase:            pe.Phase,
 		Phases:           pe.Phases,
 		Revision:         pe.Revision,
 		Memory:           pe.Memory,
-		AutoMode:         pe.AutoMode,
+		ExactRules:       pe.ExactRules,
 		UnifiedGrants:    pe.UnifiedGrants,
 		Profile:          pe.Profile,
+		KnownTools:       pe.KnownTools,
+		UntrustedTools:   pe.UntrustedTools,
 		Governance:       pe.Governance,
 		Classifier:       pe.Classifier,
 		BypassKill:       pe.BypassKill,
@@ -201,6 +234,7 @@ func (pe *PermissionEngine) Copy() *PermissionEngine {
 		Metrics:          pe.Metrics,
 		auditLog:         pe.auditLog,
 		specAllowTests:   pe.specAllowTests,
+		neverAllow:       pe.NeverAllow(),
 	}
 }
 
@@ -208,12 +242,11 @@ func (pe *PermissionEngine) Copy() *PermissionEngine {
 func NewPermissionEngine() *PermissionEngine {
 	pe := &PermissionEngine{
 		Memory:     NewPermissionMemory(),
-		AutoMode:   permissions.NewAutoModeState(),
 		Classifier: permissions.NewClassifier(),
 		BypassKill: permissions.NewBypassKillswitch(),
 		Governance: governance.New(),
 	}
-	pe.UnifiedGrants = permissions.NewUnifiedGrants(pe.Memory, pe.AutoMode)
+	pe.UnifiedGrants = permissions.NewUnifiedGrants(pe.Memory)
 	pe.Metrics = metrics.NewPermissionMetrics()
 	pe.auditLog = newPermissionAuditLog(256)
 	pe.Profile = ProfileFromLevel(pe.Autonomy)
@@ -239,32 +272,26 @@ func (pe *PermissionEngine) CheckTool(ctx context.Context, tc ToolCallInfo) (boo
 // the engine so remembered decisions and user approval keep their semantics.
 func (pe *PermissionEngine) CheckToolSnapshot(ctx context.Context, tc ToolCallInfo, snapshot PolicySnapshot) Decision {
 	// Build a fresh engine from the snapshot instead of copying *pe. Copying
-	// would clone the sync.RWMutex (vet copylocks); the snapshot path only
-	// needs the scalar policy fields plus a fresh ruleset — it never shares
-	// the clone across goroutines, so a zero-value mutex is irrelevant.
-	clone := &PermissionEngine{
-		Autonomy:         snapshot.Autonomy,
-		AutonomyExplicit: snapshot.AutonomyExplicit,
-		Stage:            snapshot.Stage,
-		DryRun:           snapshot.DryRun,
-		SpecSlug:         snapshot.SpecSlug,
-		Phase:            snapshot.Phase,
-		Phases:           snapshot.Phases,
-		Revision:         snapshot.Revision,
-		Memory:           NewPermissionMemoryFromSnapshot(snapshot.Rules),
-		Profile:          pe.Profile,
-		Governance:       pe.Governance,
-		Classifier:       pe.Classifier,
-		BypassKill:       pe.BypassKill,
-		PromptFn:         pe.PromptFn,
-		Metrics:          pe.Metrics,
-		auditLog:         pe.auditLog,
-		specAllowTests:   pe.specAllowTests,
-	}
+	// would clone the sync.RWMutex; clone copies only the non-locking
+	// configuration and the snapshot then replaces the mutable policy inputs.
+	clone := pe.clone()
+	clone.Autonomy = snapshot.Autonomy
+	clone.AutonomyExplicit = snapshot.AutonomyExplicit
+	clone.Stage = snapshot.Stage
+	clone.DryRun = snapshot.DryRun
+	clone.SpecSlug = snapshot.SpecSlug
+	clone.specDone = specDone(snapshot.SpecDone)
+	clone.specAllowTests = snapshot.SpecAllowTests
+	clone.Phase = snapshot.Phase
+	clone.Phases = snapshot.Phases
+	clone.Revision = snapshot.Revision
+	clone.Memory = NewPermissionMemoryFromSnapshot(snapshot.Rules)
+	clone.neverAllow = append([]string(nil), snapshot.NeverAllow...)
+	clone.ExactRules = snapshot.ExactRules
 	// Rebuild UnifiedGrants so it wraps the snapshot's Memory (not the
 	// original engine's live Memory, which may differ from the snapshot).
 	if clone.UnifiedGrants != nil {
-		clone.UnifiedGrants = permissions.NewUnifiedGrants(clone.Memory, clone.AutoMode)
+		clone.UnifiedGrants = permissions.NewUnifiedGrants(clone.Memory)
 	}
 	return clone.CheckToolDecision(ctx, tc)
 }
@@ -272,19 +299,23 @@ func (pe *PermissionEngine) CheckToolSnapshot(ctx context.Context, tc ToolCallIn
 // CheckToolDecision returns structured policy metadata while preserving the
 // existing permission behavior and human-readable messages.
 func (pe *PermissionEngine) CheckToolDecision(ctx context.Context, tc ToolCallInfo) Decision {
-	d := pe.evaluateToolDecision(ctx, tc)
+	d := pe.evaluateToolDecision(ctx, tc, true)
+	return pe.decorateDecision(tc, d, true)
+}
+
+func (pe *PermissionEngine) decorateDecision(tc ToolCallInfo, d Decision, record bool) Decision {
 	policy := ToolPolicyFor(tc.Name)
 	d.Capabilities = policy.Capabilities
-	d.Risk = policy.DefaultRisk
+	d.Risk = ActionRisk(tc.Name, tc.Args)
 	d.Revision = pe.Revision
-	// Record telemetry + audit trail. This is best-effort: a nil Metrics or
-	// auditLog means telemetry is disabled (e.g. in tests that construct the
-	// engine directly without NewPermissionEngine).
-	if pe.Metrics != nil {
+	// Record telemetry + audit trail only for an execution check. Preview
+	// evaluation must remain observational; otherwise a caller that renders a
+	// policy preview changes the audit history and decision counters.
+	if record && pe.Metrics != nil {
 		outcome := string(d.Outcome)
 		pe.Metrics.RecordDecision(outcome, string(d.Reason))
 	}
-	if pe.auditLog != nil {
+	if record && pe.auditLog != nil {
 		pe.auditLog.record(tc.Name, ToolSummary(tc.Name, tc.Args), d.Outcome, d.Reason)
 	}
 	return d
@@ -297,18 +328,10 @@ func (pe *PermissionEngine) EvaluateTool(ctx context.Context, tc ToolCallInfo) D
 	// Build a fresh engine with PromptFn nil (so it returns Ask instead of
 	// blocking). We avoid copying *pe to dodge the vet copylocks warning from
 	// the embedded sync.RWMutex.
-	clone := &PermissionEngine{
-		Autonomy: pe.Autonomy, AutonomyExplicit: pe.AutonomyExplicit,
-		Stage: pe.Stage, DryRun: pe.DryRun,
-		SpecSlug: pe.SpecSlug, Phase: pe.Phase, Phases: pe.Phases,
-		Revision: pe.Revision, Memory: pe.Memory,
-		UnifiedGrants: pe.UnifiedGrants, Profile: pe.Profile,
-		Governance: pe.Governance, Classifier: pe.Classifier,
-		BypassKill: pe.BypassKill, Metrics: pe.Metrics,
-		auditLog: pe.auditLog, specAllowTests: pe.specAllowTests,
-		PromptFn: nil,
-	}
-	d := clone.CheckToolDecision(ctx, tc)
+	clone := pe.clone()
+	clone.PromptFn = nil
+	d := clone.evaluateToolDecision(ctx, tc, false)
+	d = clone.decorateDecision(tc, d, false)
 	if d.Reason == ReasonPromptUnavailable {
 		d.Outcome = DecisionAsk
 		d.Reason = ReasonUserPrompt
@@ -317,7 +340,7 @@ func (pe *PermissionEngine) EvaluateTool(ctx context.Context, tc ToolCallInfo) D
 	return d
 }
 
-func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCallInfo) Decision {
+func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCallInfo, recordTelemetry bool) Decision {
 	if pe.DryRun {
 		return Decision{Outcome: DecisionDeny, Reason: ReasonDryRun, Message: "dry-run: tool execution disabled"}
 	}
@@ -329,11 +352,18 @@ func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCal
 	// or user grants at lower layers.
 	if pe.Governance != nil {
 		if d := pe.Governance.Evaluate(tc.Name, ToolSummary(tc.Name, tc.Args)); !d.Allowed {
-			if pe.Metrics != nil {
+			if recordTelemetry && pe.Metrics != nil {
 				pe.Metrics.RecordGovernanceDenial(tc.Name)
 			}
 			return Decision{Outcome: DecisionDeny, Reason: ReasonGovernance, Message: d.Reason}
 		}
+	}
+
+	// Personal hard ceiling — evaluated before hooks and spec workflow gates.
+	// A never-rule is the user's unconditional deny and must not be bypassed by
+	// a workflow allow, autonomy tier, remembered grant, or break-glass switch.
+	if denied, spec := pe.checkNeverAllow(tc.Name, ToolSummary(tc.Name, tc.Args)); denied {
+		return Decision{Outcome: DecisionDeny, Reason: ReasonRuleDenied, Message: "denied by personal ceiling: " + spec}
 	}
 
 	toolName := canonicalToolName(tc.Name)
@@ -377,32 +407,37 @@ func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCal
 
 	summary := ToolSummary(tc.Name, tc.Args)
 
-	// Personal hard ceiling — evaluated after governance but before hooks, spec,
-	// rules, autonomy, and bypass. Even YOLO + bypass cannot override a
-	// never-rule. This is the user's own "never do this" guardrail.
-	if denied, spec := pe.checkNeverAllow(tc.Name, summary); denied {
-		return Decision{Outcome: DecisionDeny, Reason: ReasonRuleDenied, Message: "denied by personal ceiling: " + spec}
-	}
-
 	// Destructive commands are hard-blocked regardless of autonomy, rule
 	// memory, or the bypass kill-switch (H6). The tool layer independently
 	// rejects them (IsDestructiveCommand in BashTool.Execute), but failing
 	// closed here too keeps the policy engine authoritative and prevents the
 	// bypass from even appearing to grant destructive commands. Placed before
 	// the rule/auto/autonomy allow paths so nothing can override it.
-	if toolName == "Bash" {
-		if cmd, ok := tc.Args["command"].(string); ok && tool.IsDestructiveCommand(cmd) {
+	if toolName == "Bash" || toolName == "PowerShell" {
+		if cmd, ok := tc.Args["command"].(string); ok && (tool.IsDestructiveCommand(cmd) || (toolName == "PowerShell" && tool.IsPowerShellDestructive(cmd))) {
 			return Decision{Outcome: DecisionDeny, Reason: ReasonRuleDenied, Message: "denied: destructive command is blocked even with bypass/autonomy enabled"}
+		}
+	}
+
+	// Persisted exact rules are explicit user policy. They are checked before
+	// broader session grants so a durable deny cannot be shadowed by a learned
+	// allow, and a durable allow remains exact rather than becoming a glob.
+	if pe.ExactRules != nil {
+		if decision, found := pe.resolveExactRule(tc.Name, toolName, ToolIdentity(tc.Name, tc.Args), summary); found {
+			if decision == stableid.Allow {
+				return Decision{Outcome: DecisionAllow, Reason: ReasonGrantAllowed, Message: "Permission allowed by persisted exact rule."}
+			}
+			return Decision{Outcome: DecisionDeny, Reason: ReasonGrantDenied, Message: "Permission denied by persisted exact rule."}
 		}
 	}
 	// Explicit remembered decisions are policy rules. They must be consulted
 	// before autonomy can short-circuit the request, especially for deny rules.
-	// When UnifiedGrants is wired up it merges Memory + AutoMode (and any
-	// ApprovalStore) into one precedence-ordered lookup: deny > allow, most
+	// When UnifiedGrants is wired up it provides one precedence-ordered lookup:
+	// deny > allow, most
 	// specific wins. Otherwise fall back to the legacy separate lookups so the
 	// field can be rolled out gradually.
 	if pe.UnifiedGrants != nil {
-		if allowed, found := pe.UnifiedGrants.Check(tc.Name, summary, time.Now()); found {
+		if allowed, found := pe.UnifiedGrants.CheckWithIdentity(toolName, summary, ToolIdentity(tc.Name, tc.Args), time.Now()); found {
 			if allowed {
 				return Decision{Outcome: DecisionAllow, Reason: ReasonGrantAllowed}
 			}
@@ -411,51 +446,60 @@ func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCal
 	} else {
 		var memoryDecision *bool
 		if pe.Memory != nil {
-			memoryDecision = pe.Memory.Check(tc.Name, summary)
-		}
-		var autoDecision *bool
-		if pe.AutoMode != nil {
-			if allowed, ok := pe.AutoMode.ShouldAutoAllow(tc.Name, summary); ok {
-				autoDecision = &allowed
-			}
+			memoryDecision = pe.Memory.CheckWithIdentity(tc.Name, summary, ToolIdentity(tc.Name, tc.Args))
 		}
 		if memoryDecision != nil && !*memoryDecision {
 			return Decision{Outcome: DecisionDeny, Reason: ReasonRuleDenied, Message: "Permission denied (rule)."}
 		}
-		if autoDecision != nil && !*autoDecision {
-			return Decision{Outcome: DecisionDeny, Reason: ReasonAutoModeDenied, Message: "Permission denied (auto-mode)."}
-		}
 		if memoryDecision != nil && *memoryDecision {
 			return Decision{Outcome: DecisionAllow, Reason: ReasonRuleAllowed}
 		}
-		if autoDecision != nil && *autoDecision {
-			return Decision{Outcome: DecisionAllow, Reason: ReasonAutoModeAllowed}
-		}
+	}
+	// External tools do not get implicit trust from being registered. An
+	// explicit remembered rule above is still honored; otherwise they follow
+	// the normal approval path even under YOLO or bypass mode.
+	if pe.isUntrustedTool(tc.Name) {
+		return pe.promptDecision(ctx, tc)
+	}
+	// Unknown/custom tools have no trusted capability declaration. Never let
+	// autonomy or the bypass switch turn an unregistered tool into an implicit
+	// allow; an explicit remembered rule may authorize it above, otherwise it
+	// must go through the human approval path (or fail closed headlessly).
+	if !pe.isRegisteredOrPolicyKnown(tc.Name) {
+		return pe.promptDecision(ctx, tc)
 	}
 
 	// Keep the profile's level in sync with the engine's current Autonomy so
 	// direct field assignments (e.g. in tests or legacy callers) take effect.
 	if pe.Profile != nil && pe.Profile.Level != pe.Autonomy {
+		overrides := pe.Profile.Overrides()
 		pe.Profile = ProfileFromLevel(pe.Autonomy)
-		// Re-apply any user overrides so a tier change preserves custom flags.
-		// (overrides are preserved across the rebuild since ProfileFromLevel
-		// creates a fresh profile.)
+		// Re-apply user overrides after deriving the new tier defaults. A tier
+		// change must not silently erase explicit per-flag policy.
+		pe.Profile.ApplyOverrides(overrides)
 	}
 
 	isSafe := !ToolNeedsPermission(tc.Name, tc.Args)
-	// When a Profile is active (always, after NewPermissionEngine) it consults
-	// per-flag overrides. Otherwise fall back to the flat AutonomyConfig.
-	if pe.Profile != nil {
-		if !pe.Profile.NeedsPermission(tc.Name, isSafe) {
-			return Decision{Outcome: DecisionAllow, Reason: ReasonAutonomy}
-		}
-	} else {
-		autoCfg := PresetConfig(pe.Autonomy)
-		if !autoCfg.NeedsPermission(tc.Name, isSafe) {
-			return Decision{Outcome: DecisionAllow, Reason: ReasonAutonomy}
-		}
+	// The shell fast path is allowlisted, not merely “not suspicious”. This
+	// keeps unknown Bash syntax and all PowerShell syntax out of unattended
+	// execution while preserving the low-friction path for common read-only
+	// commands at the Full tier.
+	if toolName == "Bash" {
+		isSafe = pe.Classifier != nil && pe.Classifier.Classify(summary) == "safe"
+	} else if toolName == "PowerShell" {
+		isSafe = false
 	}
-	if pe.BypassKill.IsEnabled() {
+	// When a Profile is active (always, after NewPermissionEngine) it consults
+	// The profile is normally initialized by NewPermissionEngine. Construct a
+	// local default only for lightweight callers that build the engine directly.
+	profile := pe.Profile
+	if profile == nil {
+		profile = ProfileFromLevel(pe.Autonomy)
+	}
+	if !profile.NeedsPermission(tc.Name, isSafe) {
+		return Decision{Outcome: DecisionAllow, Reason: ReasonAutonomy}
+	}
+	if pe.BypassKill != nil && pe.BypassKill.IsEnabled() {
 		// Audit bypass usage so there is a record of every tool call the
 		// kill-switch approved (H6). Note the destructive-command hard-deny
 		// above still applies: bypass cannot grant destructive commands.
@@ -465,7 +509,9 @@ func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCal
 		if grant != nil {
 			// Time-bound bypass: auto-expire.
 			if grant.IsExpired(now) {
-				pe.BypassKill.Disable()
+				if recordTelemetry {
+					pe.BypassKill.Disable()
+				}
 				return pe.promptDecision(ctx, tc)
 			}
 			// Scoped bypass: only cover matching categories.
@@ -477,18 +523,65 @@ func (pe *PermissionEngine) evaluateToolDecision(ctx context.Context, tc ToolCal
 				scope = strings.Join(grant.Scope, ",")
 			}
 		}
-		slog.Warn("permission bypass used", "tool", tc.Name, "summary", summary, "scope", scope)
-		if pe.Metrics != nil {
+		if recordTelemetry {
+			slog.Warn("permission bypass used", "tool", tc.Name, "summary", summary, "scope", scope)
+		}
+		if recordTelemetry && pe.Metrics != nil {
 			pe.Metrics.RecordBypass(scope)
 		}
 		return Decision{Outcome: DecisionAllow, Reason: ReasonBypass, Message: "bypass: permission checks bypassed"}
 	}
-	if pe.Classifier != nil && tc.Name == "Bash" {
-		if pe.Classifier.Classify(summary) == "safe" {
-			return Decision{Outcome: DecisionAllow, Reason: ReasonClassifiedSafe}
+	return pe.promptDecision(ctx, tc)
+}
+
+func (pe *PermissionEngine) isUntrustedTool(name string) bool {
+	if pe == nil || pe.UntrustedTools == nil {
+		return false
+	}
+	if _, ok := pe.UntrustedTools[strings.TrimSpace(name)]; ok {
+		return true
+	}
+	_, ok := pe.UntrustedTools[canonicalToolName(name)]
+	return ok
+}
+
+func (pe *PermissionEngine) isRegisteredOrPolicyKnown(name string) bool {
+	if isKnownTool(name) {
+		return true
+	}
+	if pe == nil || pe.KnownTools == nil {
+		return false
+	}
+	if _, ok := pe.KnownTools[canonicalToolName(name)]; ok {
+		return true
+	}
+	_, ok := pe.KnownTools[strings.TrimSpace(name)]
+	return ok
+}
+
+func (pe *PermissionEngine) resolveExactRule(rawName, toolName, identity, summary string) (stableid.Decision, bool) {
+	kind := stableid.KindStructuredTool
+	switch toolName {
+	case "Bash", "PowerShell":
+		kind = stableid.KindCommand
+	case "Write", "Edit", "NotebookEdit":
+		kind = stableid.KindFileMutation
+	}
+	canonical := kind.String() + "\x00" + identity
+	if decision, ok := pe.ExactRules.Resolve(kind, canonical); ok {
+		return decision, true
+	}
+	// Accept the pre-prefix form used by the original exact-rule API so an
+	// upgrade does not silently discard a user's existing project policy.
+	if decision, ok := pe.ExactRules.Resolve(kind, identity); ok {
+		return decision, true
+	}
+	if rawName != toolName {
+		if decision, ok := pe.ExactRules.Resolve(stableid.KindStructuredTool, rawName); ok {
+			return decision, true
 		}
 	}
-	return pe.promptDecision(ctx, tc)
+	return stableid.Deny, false
 }
 
 // SetNeverAllow replaces the personal hard-ceiling rule set. Each spec has the
@@ -698,6 +791,7 @@ func (pe *PermissionEngine) promptDecisionWithSummary(ctx context.Context, tc To
 			ToolName: tc.Name,
 			ToolID:   tc.ID,
 			Summary:  summary,
+			Identity: ToolIdentity(tc.Name, tc.Args),
 		},
 		Response: resp,
 	})
@@ -797,7 +891,6 @@ func (pe *PermissionEngine) AdvanceSpecStage(name string) {
 		pe.specDone = 0
 		pe.Phase = 0
 		pe.Phases = 0
-		pe.convergeChecked = false
 		pe.Revision++
 		return
 	}
@@ -810,7 +903,6 @@ func (pe *PermissionEngine) AdvanceSpecStage(name string) {
 	if canonicalToolName(name) == "ApproveImplementation" {
 		pe.Phase = 1
 		pe.Phases = detectPhases(pe.SpecSlug)
-		pe.convergeChecked = false
 	}
 	if canonicalToolName(name) == "Plan" {
 		if pe.unresolvedClarifications() > 0 {
@@ -819,6 +911,32 @@ func (pe *PermissionEngine) AdvanceSpecStage(name string) {
 			pe.Stage = SpecStageDesign
 		}
 	}
+}
+
+// RestoreSpecWorkflow installs the serialized workflow state carried by a
+// parent policy snapshot. The completion mask is private to this package, so
+// callers provide its stable integer representation.
+func (pe *PermissionEngine) RestoreSpecWorkflow(stage SpecStage, slug string, doneMask int) {
+	if pe == nil {
+		return
+	}
+	pe.Stage = stage
+	pe.SpecSlug = slug
+	pe.specDone = specDone(doneMask)
+}
+
+// ResetSpecWorkflow clears every spec-workflow field, including the parallel
+// stage completion mask that must not leak into a later workflow.
+func (pe *PermissionEngine) ResetSpecWorkflow() {
+	if pe == nil {
+		return
+	}
+	pe.Stage = SpecStageNone
+	pe.SpecSlug = ""
+	pe.specDone = 0
+	pe.Phase = 0
+	pe.Phases = 0
+	pe.Revision++
 }
 
 // ToolCallInfo is a minimal struct for permission checking.

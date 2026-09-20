@@ -29,7 +29,7 @@ var (
 	statusSpecColor   = infoSky
 	statusTokenColor  = tokenSage
 	statusCostColor   = costViolet
-	statusPRColor     = lipgloss.Color("#56D4DD") // cyan — unique hue in the footer row
+	statusPRColor     = infoSky
 
 	statusCwdStyle    = lipgloss.NewStyle().Foreground(statusCWDColor).Inline(true)
 	statusPRStyle     = lipgloss.NewStyle().Foreground(statusPRColor).Inline(true)
@@ -43,6 +43,28 @@ var (
 	dryRunStyle       = lipgloss.NewStyle().Foreground(warnAmber).Bold(true).Inline(true)
 )
 
+// refreshStatusBarStyles keeps the footer synchronized with live theme
+// changes. The color aliases are retained for tests and layout helpers, but
+// all actual styles are rebuilt from the semantic theme tokens here.
+func refreshStatusBarStyles() {
+	statusCWDColor = cwdBlue
+	statusBranchColor = branchYellow
+	statusSpecColor = infoSky
+	statusTokenColor = tokenSage
+	statusCostColor = costViolet
+	statusPRColor = infoSky
+	statusCwdStyle = lipgloss.NewStyle().Foreground(statusCWDColor).Inline(true)
+	statusPRStyle = lipgloss.NewStyle().Foreground(statusPRColor).Inline(true)
+	statusBranchStyle = lipgloss.NewStyle().Foreground(statusBranchColor).Inline(true)
+	statusSpecStyle = lipgloss.NewStyle().Foreground(statusSpecColor).Inline(true)
+	statusTokenStyle = lipgloss.NewStyle().Foreground(statusTokenColor).Inline(true)
+	statusCostStyle = lipgloss.NewStyle().Foreground(statusCostColor).Inline(true)
+	statusClockStyle = lipgloss.NewStyle().Foreground(hudLabelPink).Inline(true)
+	statusFocusStyle = lipgloss.NewStyle().Foreground(infoSky).Inline(true)
+	statusDimStyle = lipgloss.NewStyle().Foreground(dimColor).Inline(true)
+	dryRunStyle = lipgloss.NewStyle().Foreground(warnAmber).Bold(true).Inline(true)
+}
+
 // renderStatusBar renders the session stats footer below the input area.
 // Returns 1 line normally, or 2 lines when the terminal is wide enough
 // (width >= 120) and secondary operational state is present.
@@ -50,12 +72,12 @@ func renderStatusBar(m *chatModel, width int) []string {
 	if width < 20 {
 		width = 80
 	}
-	left := renderStatusBarLeft(m)
+	left := renderStatusBarPrimaryLeft(m)
 	right := renderStatusBarRight(m)
 	// Two-line layout from 100 cols so control-plane chips are visible more often.
 	if width >= 100 {
 		primary := layoutFooterRow(renderStatusBarPrimaryLeft(m), renderStatusBarPrimaryRight(m), width)
-		secondary := layoutFooterRow(renderStatusBarSecondaryLeft(m), renderStatusBarSecondaryRight(m), width)
+		secondary := layoutFooterRow("", renderStatusBarSecondaryRight(m), width)
 		if secondary == "" || strings.TrimSpace(stripANSI(secondary)) == "" {
 			return []string{primary}
 		}
@@ -139,12 +161,17 @@ func renderStatusBarPrimaryRight(m *chatModel) string {
 	if m == nil || m.session == nil {
 		return ""
 	}
+	return strings.Join(renderStatusBarUsage(m), statusDimStyle.Render(" · "))
+}
+
+func renderStatusBarUsage(m *chatModel) []string {
+	if m == nil || m.session == nil {
+		return nil
+	}
 	tokens := m.session.CostValue().PromptTokens + m.session.CostValue().CompletionTokens
-	tokenText := icons.Database() + " " + formatTokenCountCompact(tokens) + " tokens"
-	costText := formatStatusCost(m.session.CostValue())
 	parts := []string{
-		statusTokenStyle.Render(tokenText),
-		statusCostStyle.Render(costText),
+		statusTokenStyle.Render(icons.Database() + " " + formatTokenCountCompact(tokens) + " tokens"),
+		statusCostStyle.Render(formatStatusCost(m.session.CostValue())),
 	}
 	sessionDur := time.Duration(0)
 	if !m.sessionStartedAt.IsZero() {
@@ -154,7 +181,7 @@ func renderStatusBarPrimaryRight(m *chatModel) string {
 	if m.waiting || m.manualCompacting {
 		parts = append(parts, statusClockStyle.Render(formatSessionDuration(requestDuration(m))))
 	}
-	return strings.Join(parts, statusDimStyle.Render(" · "))
+	return parts
 }
 
 func formatStatusCost(c *cost.Cost) string {
@@ -164,14 +191,22 @@ func formatStatusCost(c *cost.Cost) string {
 	return fmt.Sprintf("%s $%.3f", icons.Ruby(), c.TotalUSD())
 }
 
-func renderStatusBarSecondaryLeft(m *chatModel) string {
-	return ""
-}
-
 // renderStatusBarSecondaryRight — errors, dry-run, vim, focus/pause, spend.
 func renderStatusBarSecondaryRight(m *chatModel) string {
+	parts := renderStatusBarControls(m)
+	if m != nil && m.session != nil && m.session.AutoCommit() {
+		parts = append(parts, statusDimStyle.Render("auto-commit"))
+	}
+	return strings.Join(parts, statusDimStyle.Render(" · "))
+}
+
+// renderStatusBarControls is shared by the narrow one-line footer and the
+// wide secondary row. Keeping safety posture in one renderer prevents a
+// layout breakpoint from hiding dry-run, pause, focus, auto-commit, or vim
+// state.
+func renderStatusBarControls(m *chatModel) []string {
 	if m == nil || m.session == nil {
-		return ""
+		return nil
 	}
 	var parts []string
 	if m.inScrollbackFocus() {
@@ -180,24 +215,13 @@ func renderStatusBarSecondaryRight(m *chatModel) string {
 	if m.waiting && !m.streamFollow {
 		parts = append(parts, statusDimStyle.Render(icons.Pause()))
 	}
-	if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().DryRun() {
+	if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().RuntimeState().DryRun {
 		parts = append(parts, dryRunStyle.Render(icons.Pause()+" DRY-RUN"))
-	}
-	// Always-visible compact spend on wide secondary row.
-	if c := m.session.CostValue(); c != nil {
-		if usd := c.TotalUSD(); usd > 0 {
-			parts = append(parts, statusCostStyle.Render(fmt.Sprintf("$%.3f", usd)))
-		} else if c.Total() > 0 {
-			parts = append(parts, statusCostStyle.Render(fmt.Sprintf("%s %.2f", icons.Ruby(), c.Total())))
-		}
-	}
-	if m.session.AutoCommit() {
-		parts = append(parts, statusDimStyle.Render("auto-commit"))
 	}
 	if m.vim != nil && m.vim.IsEnabled() {
 		parts = append(parts, statusDimStyle.Render(m.vim.ModeString()))
 	}
-	return strings.Join(parts, statusDimStyle.Render(" · "))
+	return parts
 }
 
 // statusBranchTTL bounds how long the cwd+branch segment is cached, so a
@@ -286,24 +310,6 @@ func (m *chatModel) refreshStatusBarLeft(force bool) (bool, tea.Cmd) {
 	return true, prCmd
 }
 
-func renderStatusBarLeft(m *chatModel) string {
-	cwd, ok := cachedStatusLeftCwd(m)
-	if !ok {
-		return ""
-	}
-	parts := []string{statusCwdStyle.Render(cwd)}
-	if branch := cachedStatusBranch(m); branch != "" {
-		parts = append(parts, statusBranchStyle.Render(icons.Branch()+" "+branch))
-		if m != nil && len(m.statusLeftPRs) > 0 {
-			parts = append(parts, statusPRStyle.Render(icons.PullRequest()+" "+strings.Join(m.statusLeftPRs, " ")))
-		}
-	}
-	if stage := specStageForStatus(m); stage != "" {
-		parts = append(parts, statusSpecStyle.Render(stage))
-	}
-	return strings.Join(parts, statusDimStyle.Render(" · "))
-}
-
 // specStageForStatus returns a short spec stage indicator for the status bar,
 // or empty string if no spec workflow is active.
 func specStageForStatus(m *chatModel) string {
@@ -355,21 +361,11 @@ func renderStatusBarRight(m *chatModel) string {
 		return ""
 	}
 
-	tokens := m.session.CostValue().PromptTokens + m.session.CostValue().CompletionTokens
-	tokenText := icons.Database() + " " + formatTokenCountCompact(tokens) + " tokens"
-	costText := formatStatusCost(m.session.CostValue())
-	var meta []string
-	if m.inScrollbackFocus() {
-		meta = append(meta, statusFocusStyle.Render("⧉"))
-	}
-	if m.waiting && !m.streamFollow {
-		meta = append(meta, statusDimStyle.Render(icons.Pause()))
-	}
+	meta := renderStatusBarControls(m)
 
 	parts := append(
 		meta,
-		statusTokenStyle.Render(tokenText),
-		statusCostStyle.Render(costText),
+		renderStatusBarUsage(m)...,
 	)
 
 	// Context window usage — compact bar showing how full the context is.
@@ -386,26 +382,6 @@ func renderStatusBarRight(m *chatModel) string {
 		}
 	}
 
-	sessionDur := time.Duration(0)
-	if !m.sessionStartedAt.IsZero() {
-		sessionDur = time.Since(m.sessionStartedAt)
-	}
-	clockText := icons.ClockOutline() + " " + formatSessionDuration(sessionDur)
-	parts = append(parts, statusClockStyle.Render(clockText))
-
-	if m.waiting || m.manualCompacting {
-		timerText := formatSessionDuration(requestDuration(m))
-		parts = append(parts, statusClockStyle.Render(timerText))
-	}
-
-	// Prominent dry-run indicator — safety-critical awareness.
-	if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().DryRun() {
-		parts = append(parts, dryRunStyle.Render(icons.Pause()+" DRY-RUN"))
-	}
-
-	if m.vim != nil && m.vim.IsEnabled() {
-		parts = append(parts, statusDimStyle.Render(m.vim.ModeString()))
-	}
 	// Persistent autonomy tier indicator — always visible for safety awareness.
 	if m.session != nil && m.session.PermSvc() != nil {
 		level := effectivePermissionTier(m.session)
@@ -469,26 +445,6 @@ func formatSessionDuration(d time.Duration) string {
 func formatTokenCountWithCommas(tokens int) string {
 	p := message.NewPrinter(language.English)
 	return p.Sprintf("%d tokens", tokens)
-}
-
-func renderContainerFooterLeft(m chatModel) string {
-	cwd, ok := cachedStatusLeftCwd(&m)
-	if !ok {
-		// Cache not warmed yet (first frame): fall back to the live cwd so the
-		// footer is never blank.
-		if live, err := os.Getwd(); err == nil && live != "" {
-			cwd, ok = shortenHomePath(live), true
-		}
-	}
-	if !ok {
-		return ""
-	}
-	branch := cachedStatusBranch(&m)
-	label := cwd
-	if branch != "" {
-		label += " · " + branch
-	}
-	return statusDimStyle.Render(label)
 }
 
 func statusLineSummary(m *chatModel) string {

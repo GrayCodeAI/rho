@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/GrayCodeAI/rho/internal/permissions"
 	"github.com/GrayCodeAI/rho/internal/spec"
 )
 
@@ -173,60 +173,5 @@ func pathArgument(args map[string]interface{}) (string, bool) {
 }
 
 func canonicalToolName(name string) string {
-	switch strings.ToLower(name) {
-	case "bash":
-		return "Bash"
-	case "file_read", "read":
-		return "Read"
-	case "file_write", "write":
-		return "Write"
-	case "file_edit", "edit":
-		return "Edit"
-	case "ls":
-		return "LS"
-	case "glob":
-		return "Glob"
-	case "grep":
-		return "Grep"
-	case "web_fetch", "webfetch":
-		return "WebFetch"
-	case "web_search", "websearch":
-		return "WebSearch"
-	case "tool_health", "toolhealth", "tools_health":
-		return "ToolHealth"
-	case "project_verify", "projectverify", "verify_project":
-		return "ProjectVerify"
-	case "dependency_audit", "dependencyaudit", "deps":
-		return "DependencyAudit"
-	case "git_history", "githistory", "git-history":
-		return "GitHistory"
-	case "github", "gh":
-		return "GitHub"
-	case "sql", "sql_query":
-		return "SQL"
-	case "agent", "task":
-		return "Agent"
-	case "ask_user", "askuserquestion":
-		return "AskUserQuestion"
-	case "todo", "todowrite":
-		return "TodoWrite"
-	case "lsp":
-		return "LSP"
-	case "specify":
-		return "Specify"
-	case "plan":
-		return "Plan"
-	case "tasks":
-		return "Tasks"
-	case "approve_implementation", "approveimplementation":
-		return "ApproveImplementation"
-	case "notebook_edit", "notebookedit":
-		return "NotebookEdit"
-	case "config":
-		return "Config"
-	case "brief", "sendusermessage":
-		return "SendUserMessage"
-	default:
-		return name
-	}
+	return permissions.CanonicalToolName(name)
 }

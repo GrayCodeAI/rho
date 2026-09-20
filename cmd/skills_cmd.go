@@ -112,9 +112,13 @@ var skillsRemoveCmd = &cobra.Command{
 	Short: "Remove an installed skill",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ok, err := confirmDestructive(fmt.Sprintf("Remove skill %q?", args[0]))
-		if err != nil {
-			return err
+		ok, _ := cmd.Flags().GetBool("yes")
+		if !ok {
+			var err error
+			ok, err = confirmDestructive(fmt.Sprintf("Remove skill %q?", args[0]))
+			if err != nil {
+				return err
+			}
 		}
 		if !ok {
 			fmt.Printf("%s\n", auditTint("Cancelled.", textMuted))
@@ -228,6 +232,7 @@ func init() {
 	skillsSearchCmd.Flags().Bool("json", false, "output as JSON")
 	skillsInstallCmd.Flags().String("scope", "user", "installation scope: user or project")
 	skillsAuditCmd.Flags().Bool("json", false, "output as JSON")
+	skillsRemoveCmd.Flags().Bool("yes", false, "confirm removing the skill")
 
 	skillsCmd.AddCommand(skillsListCmd)
 	skillsCmd.AddCommand(skillsSearchCmd)

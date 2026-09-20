@@ -8,12 +8,9 @@ import (
 // the current git branch, short HEAD hash, upstream tracking branch,
 // and a short status output. This is the first command migrated out
 // of chat_commands.go as an exemplar of the SubcommandRegistry
-// pattern; future commands should follow this same template.
-//
-// The init() function registers the subcommand in the package-level
-// subcommandRegistry. The dispatcher in handleCommand will use the
-// registry once the migration is complete; for now the case
-// statement in chat_commands.go is the active dispatch path.
+// pattern; future commands should follow this same template. The init
+// function registers it in the package-level subcommandRegistry, which
+// handleCommand resolves through the shared dispatcher.
 type branchSubcommand struct{}
 
 func (b *branchSubcommand) Name() string      { return "branch" }

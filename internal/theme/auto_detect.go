@@ -113,6 +113,7 @@ func WatchOSTheme(ctx context.Context, cb func(theme string)) {
 // If preference is "auto", it detects the OS theme preference and returns "dark" or "light".
 // If detection fails, it returns "dark" as the default.
 func ApplyThemePreference(preference string) string {
+	preference = strings.ToLower(strings.TrimSpace(preference))
 	if preference == "auto" || preference == "system" {
 		detected := DetectOSTheme()
 		if detected != "" {

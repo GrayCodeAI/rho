@@ -15,7 +15,7 @@ import (
 
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	"github.com/GrayCodeAI/rho/internal/engine"
-	"github.com/GrayCodeAI/rho/internal/feature/shellmode"
+	"github.com/GrayCodeAI/rho/internal/features/shellmode"
 	"github.com/GrayCodeAI/rho/internal/session"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
 )
@@ -139,9 +139,7 @@ func (m chatModel) submitUserMessage() (chatModel, tea.Cmd) {
 		m.walSeq++
 		m.recordWALError(m.wal.Append(session.Message{Role: "user", Content: text}))
 	}
-	m.turnSawThinking = false
-	m.turnHadAssistantOutput = false
-	m.turnHadToolActivity = false
+	m.turn.Reset()
 	m.waiting = true
 	m.autoScroll = true
 	m.viewDirty = true

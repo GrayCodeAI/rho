@@ -134,6 +134,9 @@ func TestSubcommandRegistry_DuplicateRegistrationIsNoOp(t *testing.T) {
 	if got.Description() != "first" {
 		t.Errorf("got Description = %q, want 'first' (first registration wins)", got.Description())
 	}
+	if errs := r.RegistrationErrors(); len(errs) != 1 {
+		t.Fatalf("RegistrationErrors = %#v, want one diagnostic", errs)
+	}
 }
 
 func TestSubcommandRegistry_NilIsSafe(t *testing.T) {

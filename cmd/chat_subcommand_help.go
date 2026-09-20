@@ -6,30 +6,14 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	commandfeature "github.com/GrayCodeAI/rho/internal/features/commands"
 )
 
 // helpCategory returns the display category for a slash command name,
 // matching the categories used in the command palette. This keeps /help
 // output and the palette consistent.
 func helpCategory(cmdName string) string {
-	switch cmdName {
-	case "/help", "/model", "/config", "/quit", "/exit", "/clear", "/compact", "/undo", "/snapshot", "/recover", "/new", "/copy", "/welcome":
-		return "Core"
-	case "/review", "/commit", "/test", "/lint", "/diff", "/status", "/audit", "/security-review", "/check", "/bughunter", "/hunt", "/ultrareview", "/start", "/branch-agent", "/auto-commit":
-		return "Workflow"
-	case "/agents", "/agents-init", "/mission", "/exec", "/research", "/loop", "/council", "/dream", "/investigate", "/vibe":
-		return "Agent"
-	case "/memory", "/context", "/ctx", "/search", "/history", "/session", "/sessions", "/export", "/share", "/fork", "/branches", "/branch":
-		return "Memory"
-	case "/tools", "/mcp", "/plugin", "/plugins", "/skills", "/files", "/image", "/render", "/ecosystem", "/path":
-		return "Tools"
-	case "/doctor", "/cost", "/usage", "/metrics", "/stats", "/integrity", "/stale", "/tokens", "/provider-status":
-		return "Diagnostics"
-	case "/autonomy", "/spec", "/vim", "/theme", "/color", "/mouse", "/select", "/focus", "/follow", "/output-style", "/statusline", "/keybindings", "/voice", "/remote-env", "/refresh-model-catalog", "/mode", "/trust":
-		return "Settings"
-	default:
-		return "Other"
-	}
+	return commandfeature.Category(cmdName)
 }
 
 // helpSubcommand implements the /help and /commands slash commands.

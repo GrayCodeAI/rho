@@ -22,19 +22,51 @@ type AutonomyProfile struct {
 
 	// overrides records which flags were explicitly set by the user so the
 	// picker/UI can show "customized" and reset can clear them.
+	// overrides stores the explicit flag values. Key presence, rather than the
+	// value, records whether a flag was customized because false is a valid
+	// user choice.
 	overrides map[string]bool
 	mu        sync.RWMutex
 }
 
+// Clone returns an independent profile snapshot. Callers can inspect or
+// modify the clone without racing the live session policy.
+func (p *AutonomyProfile) Clone() *AutonomyProfile {
+	if p == nil {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return &AutonomyProfile{
+		Level:           p.Level,
+		AutoContinue:    p.AutoContinue,
+		AutoApplyEdits:  p.AutoApplyEdits,
+		AutoExecuteBash: p.AutoExecuteBash,
+		AutoCommit:      p.AutoCommit,
+		AutoNetwork:     p.AutoNetwork,
+		overrides:       cloneBoolMap(p.overrides),
+	}
+}
+
+func cloneBoolMap(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
 // ProfileFromLevel derives the default profile for an autonomy level.
 func ProfileFromLevel(level AutonomyLevel) *AutonomyProfile {
-	cfg := PresetConfig(level)
+	if level < AutonomySupervised || level > AutonomyYOLO {
+		level = AutonomySupervised
+	}
 	return &AutonomyProfile{
 		Level:           level,
-		AutoContinue:    cfg.AutoContinue,
-		AutoApplyEdits:  cfg.AutoApplyEdits,
-		AutoExecuteBash: cfg.AutoExecuteBash,
-		AutoCommit:      cfg.AutoCommit,
+		AutoContinue:    level >= AutonomyBasic,
+		AutoApplyEdits:  level >= AutonomySemi,
+		AutoExecuteBash: level >= AutonomyFull,
+		AutoCommit:      level >= AutonomyFull,
 		// AutoNetwork defaults to true for all tiers except Supervised (where
 		// everything asks anyway).
 		AutoNetwork: level >= AutonomyBasic,
@@ -84,7 +116,7 @@ func (p *AutonomyProfile) setFlag(flag string, val bool) bool {
 	default:
 		return false
 	}
-	p.overrides[norm] = true
+	p.overrides[norm] = val
 	return true
 }
 
@@ -96,7 +128,8 @@ func (p *AutonomyProfile) IsOverridden(flag string) bool {
 	norm = strings.ReplaceAll(norm, "_", "")
 	norm = strings.ReplaceAll(norm, "-", "")
 	norm = strings.ReplaceAll(norm, " ", "")
-	return p.overrides[norm]
+	_, ok := p.overrides[norm]
+	return ok
 }
 
 // Overrides returns a copy of the override set (for persistence/display).
@@ -111,8 +144,7 @@ func (p *AutonomyProfile) Overrides() map[string]bool {
 }
 
 // NeedsPermission decides whether a tool call should prompt the user, consulting
-// the profile's flags and overrides. It replaces AutonomyConfig.NeedsPermission
-// when a profile is active.
+// the profile's flags and overrides.
 //
 // isSafe indicates the specific Bash invocation was classified as safe (e.g.
 // read-only git). Network tools are gated by AutoNetwork.
@@ -166,11 +198,11 @@ func (p *AutonomyProfile) NeedsPermission(toolName string, isSafe bool) bool {
 }
 
 // isShellExecutionTool reports whether a tool executes a model-supplied
-// string in a shell (Bash or the persistent-terminal tools). These share the
-// same autoBash override and safe-command gating.
+// string in a shell (Bash, PowerShell, or the persistent-terminal tools).
+// These share the same autoBash override and safe-command gating.
 func isShellExecutionTool(toolName string) bool {
 	switch canonicalToolName(toolName) {
-	case "Bash", "TerminalCreate", "TerminalSend":
+	case "Bash", "PowerShell", "TerminalCreate", "TerminalSend":
 		return true
 	}
 	return false

@@ -18,6 +18,7 @@ import (
 	"github.com/GrayCodeAI/rho/internal/engine"
 	aiwatch "github.com/GrayCodeAI/rho/internal/engine/io"
 	"github.com/GrayCodeAI/rho/internal/engine/lifecycle"
+	chatfeature "github.com/GrayCodeAI/rho/internal/features/chat"
 	"github.com/GrayCodeAI/rho/internal/observability/logger"
 	"github.com/GrayCodeAI/rho/internal/session"
 )
@@ -70,10 +71,7 @@ func runPrint(text string) error {
 		countdown = cfg.Countdown
 	}
 
-	ch, err := sess.Stream(ctx)
-	if err != nil {
-		return err
-	}
+	ch, streamErrors := chatfeature.StreamChannel(ctx, sess)
 
 	var printed strings.Builder
 	var countdownShown bool
@@ -144,6 +142,9 @@ func runPrint(text string) error {
 			}
 			return nil
 		}
+	}
+	if err := <-streamErrors; err != nil {
+		return err
 	}
 	switch outputFormat {
 	case "text":
@@ -424,11 +425,7 @@ func runRepl() error {
 
 		sess.AddUser(input)
 
-		ch, err := sess.Stream(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", auditTint(fmt.Sprintf("Error: %v", err), errorCoral))
-			continue
-		}
+		ch, streamErrors := chatfeature.StreamChannel(ctx, sess)
 
 		var printed strings.Builder
 		var countdownShown bool
@@ -488,6 +485,9 @@ func runRepl() error {
 					saveFluxSession(sessionID, sess)
 				}
 			}
+		}
+		if err := <-streamErrors; err != nil {
+			fmt.Fprintf(os.Stderr, "%s\n", auditTint(fmt.Sprintf("Error: %v", err), errorCoral))
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/GrayCodeAI/rho/internal/observability/otellog"
 	"github.com/GrayCodeAI/rho/internal/observability/oteltrace"
 	"github.com/GrayCodeAI/rho/internal/rhoerr"
+	internaltheme "github.com/GrayCodeAI/rho/internal/theme"
 )
 
 // Version, Commit, and BuildDate are set at build time via ldflags.
@@ -78,7 +79,6 @@ func main() {
 
 	// Propagate the canonical version to all sub-packages that surface it
 	// (CLI version flag, HTTP API version field, and MCP clientInfo).
-	// The sandbox image has an independent compatibility version.
 	cmd.SetVersion(Version)
 	cmd.SetBuildDate(BuildDate)
 	mcp.SetClientVersion(Version)
@@ -100,7 +100,7 @@ func main() {
 // errorCoralRGB is the brand error color (#FF6B6B) as an SGR truecolor
 // sequence, applied only when stderr is a color-capable terminal so scripts
 // piping diagnostics never see raw ANSI.
-const errorCoralRGB = "\x1b[38;2;255;107;107m"
+const errorCoralRGB = internaltheme.ReportErrorANSI
 
 // printError writes a top-level failure to stderr, colorized (error coral)
 // when the terminal supports it and NO_COLOR is unset.

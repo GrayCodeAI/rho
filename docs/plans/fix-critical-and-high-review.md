@@ -4,6 +4,10 @@
 > PR: <https://github.com/GrayCodeAI/rho/pull/50>
 > Status: **✅ COMPLETE — all 9 items + extensive follow-up committed.**
 > Constraint: **no new go.mod / go.sum dependencies** for any item in this plan.
+>
+> Historical note: H9's native sandbox implementation was subsequently
+> removed from the local product runtime. The current safety boundary is the
+> host-native permission, path, trust, and destructive-command policy.
 
 ## Completion summary
 
@@ -17,7 +21,7 @@
 | H6  | high | Session god-object decomposition (engine sub-PR) | ✅ committed | `3a151d2` |
 | H7  | high | Guardian LLM-judge JSON parser + cap | ✅ committed | `1df3e45` |
 | H8  | high | Sanitizer allow-list by Unicode script | ✅ committed | `5eb5136` |
-| H9  | high | Sandbox default-deny (TierWorkspace) | ✅ committed | `f053502` |
+| H9  | high | Sandbox default-deny (TierWorkspace) | superseded by sandbox removal | `f053502` |
 
 Plus follow-up work (already merged into the same branch):
 
@@ -93,7 +97,7 @@ H6, H7, H8, H9) broken into a sequence of small, reviewable PRs.
 | H6 | high | Finish `Session` god-object decomposition | `internal/engine/session.go`, `session_services.go` | L |
 | H7 | high | Guardian LLM-judge JSON parser + cap | `internal/permissions/guardian.go:58-109` | M |
 | H8 | high | Sanitizer: allow-list by Unicode script | `internal/permissions/sanitizer.go` | M |
-| H9 | high | Sandbox: default-deny write/process | `internal/sandbox/seatbelt.go:70-108` | M |
+| H9 | high | Sandbox: default-deny write/process | superseded; no local sandbox runtime | — |
 
 ## Out of scope (deferred to next plan)
 
@@ -358,7 +362,10 @@ legitimate-input fix, not a security regression.
 
 ---
 
-## PR 7 — Sandbox default-deny (H9)
+## PR 7 — Sandbox default-deny (H9) — historical, superseded
+
+> This section records the original review finding only. Do not recreate the
+> removed sandbox package or Docker fallback from this plan.
 
 **Bug**: `internal/sandbox/seatbelt.go:70-108` `DefaultRhoPolicy` defaults
 to `AllowWrite: true` and `AllowProcess: true`. A sandboxed bash can write

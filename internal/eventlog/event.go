@@ -107,9 +107,6 @@ const (
 	// PermissionPreset records whether a category is covered by the active
 	// policy preset. Ported from DeepSeek Harness permission/preset.
 	PermissionPreset Type = "permission.preset"
-	// SandboxMode records a sandbox mode transition. Ported from DeepSeek
-	// Harness sandbox/mode.
-	SandboxMode Type = "sandbox.mode"
 	// ScheduleChange records a schedule configuration change. Ported from
 	// DeepSeek Harness schedule/change.
 	ScheduleChange Type = "schedule.change"
@@ -173,7 +170,7 @@ func (t Type) Known() bool {
 		ToolWorkflowStart, ToolWorkflowEnd, LLMRetry, LLMRetryStarted, RequestContext,
 		CompactionStart, CompactionPrune, CompactionEnd, CompactionSummary,
 		SessionEndSeed, TodoWrite, RequestHeader, HookInvoked, HookResult,
-		FeedbackRecord, GoalChange, PermissionPreset, SandboxMode, ScheduleChange,
+		FeedbackRecord, GoalChange, PermissionPreset, ScheduleChange,
 		ScheduleCreate, ScheduleUpdate, ScheduleDelete, ScheduleDue,
 		SessionTitle, SessionTitleLLMRequest, SubagentDescriptor, AgentPresetSelected,
 		AgentInboxSpliced, CommandRun, CommandDone,

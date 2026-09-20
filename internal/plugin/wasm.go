@@ -15,7 +15,7 @@ import (
 
 // WasmPluginRuntime runs WASM-compiled plugins using wazero (pure Go, no CGO).
 // WASM plugins are faster than subprocess plugins (no process spawn overhead)
-// and more secure (capability-based sandboxing by default).
+// and more secure (capability-restricted execution by default).
 type WasmPluginRuntime struct {
 	manifestPath string
 	manifest     *Manifest

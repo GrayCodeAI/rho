@@ -410,7 +410,7 @@ func TestValidationResult_Error(t *testing.T) {
 
 func TestPolicySchemaVersionMigratesLegacySettings(t *testing.T) {
 	var s Settings
-	if err := json.Unmarshal([]byte(`{"autonomy":0,"sandbox":"workspace"}`), &s); err != nil {
+	if err := json.Unmarshal([]byte(`{"autonomy":0}`), &s); err != nil {
 		t.Fatal(err)
 	}
 	if s.PolicySchemaVersion != 0 {

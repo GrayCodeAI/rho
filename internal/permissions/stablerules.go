@@ -9,6 +9,7 @@ import (
 
 	"github.com/GrayCodeAI/rho/internal/permissions/stableid"
 	"github.com/GrayCodeAI/rho/internal/storage"
+	"github.com/gofrs/flock"
 )
 
 // StableRuleStore persists exact, stable-id permission rules (ports fx's
@@ -55,19 +56,27 @@ func (s *StableRuleStore) Load() error {
 	if s == nil {
 		return nil
 	}
-	data, err := os.ReadFile(s.path) // #nosec G304 -- path is the caller-supplied stable-rules.json path (see DefaultStableRulesPath)
+	state, err := readStableRuleState(s.path)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.state = state
+	s.mu.Unlock()
+	return nil
+}
+
+func readStableRuleState(path string) (stableid.State, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the caller-supplied stable-rules.json path (see DefaultStableRulesPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			s.mu.Lock()
-			s.state = stableid.NewState()
-			s.mu.Unlock()
-			return nil
+			return stableid.NewState(), nil
 		}
-		return fmt.Errorf("read stable rules: %w", err)
+		return stableid.State{}, fmt.Errorf("read stable rules: %w", err)
 	}
 	var file stableRuleFile
 	if err := json.Unmarshal(data, &file); err != nil {
-		return fmt.Errorf("unmarshal stable rules: %w", err)
+		return stableid.State{}, fmt.Errorf("unmarshal stable rules: %w", err)
 	}
 	state := stableid.State{NextGeneration: file.NextGeneration}
 	if state.NextGeneration == 0 {
@@ -76,7 +85,7 @@ func (s *StableRuleStore) Load() error {
 	for _, d := range file.Rules {
 		key, ok := stableid.NewKey(stableid.Kind(d.Kind), d.Canonical)
 		if !ok {
-			return fmt.Errorf("stable rules: invalid key for rule %d", d.ID)
+			return stableid.State{}, fmt.Errorf("stable rules: invalid key for rule %d", d.ID)
 		}
 		decision := stableid.Deny
 		if d.Decision == int(stableid.Allow) {
@@ -91,12 +100,9 @@ func (s *StableRuleStore) Load() error {
 		})
 	}
 	if err := stableid.Validate(state); err != nil {
-		return err
+		return stableid.State{}, err
 	}
-	s.mu.Lock()
-	s.state = state
-	s.mu.Unlock()
-	return nil
+	return state, nil
 }
 
 // Save persists the current state atomically.
@@ -104,6 +110,11 @@ func (s *StableRuleStore) Save() error {
 	if s == nil {
 		return nil
 	}
+	unlock, err := lockStableRulesFile(s.path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	s.mu.RLock()
 	file := stableRuleFile{NextGeneration: s.state.NextGeneration}
 	for _, r := range s.state.Rules {
@@ -119,19 +130,22 @@ func (s *StableRuleStore) Save() error {
 	if err != nil {
 		return fmt.Errorf("marshal stable rules: %w", err)
 	}
-	dir := filepath.Dir(s.path)
+	return writeStableRulesAtomically(s.path, data)
+}
+
+// lockStableRulesFile serializes read/modify/write mutations across rho
+// processes. The lock file is intentionally retained; flock ownership, not
+// its presence, provides exclusion and the kernel releases it on crash.
+func lockStableRulesFile(path string) (func(), error) {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("create stable rules directory: %w", err)
+		return nil, fmt.Errorf("create stable rules directory: %w", err)
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil { // #nosec G306 -- rule store is user-owned policy data
-		return fmt.Errorf("write stable rules temp file: %w", err)
+	lock := flock.New(path + ".lock")
+	if err := lock.Lock(); err != nil {
+		return nil, fmt.Errorf("lock stable rules: %w", err)
 	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("rename stable rules file: %w", err)
-	}
-	return nil
+	return func() { _ = lock.Unlock() }, nil
 }
 
 // Remember upserts an exact rule and returns its stable id. ok=false when the
@@ -147,6 +161,16 @@ func (s *StableRuleStore) Remember(kind stableid.Kind, canonical, displayIdentit
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := lockStableRulesFile(s.path)
+	if err != nil {
+		return 0, false
+	}
+	defer unlock()
+	latest, err := readStableRuleState(s.path)
+	if err != nil {
+		return 0, false
+	}
+	s.state = latest
 
 	// Upsert an existing exact rule by matching its current generation.
 	var expected *uint64
@@ -160,11 +184,11 @@ func (s *StableRuleStore) Remember(kind stableid.Kind, canonical, displayIdentit
 	if status != stableid.Applied {
 		return 0, false
 	}
-	s.state = next
-	rule, _ := stableid.RuleForKey(s.state, key)
-	if err := s.saveState(); err != nil {
+	rule, _ := stableid.RuleForKey(next, key)
+	if err := s.saveStateValue(next); err != nil {
 		return 0, false
 	}
+	s.state = next
 	return rule.ID, true
 }
 
@@ -176,6 +200,16 @@ func (s *StableRuleStore) Revoke(id uint64) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := lockStableRulesFile(s.path)
+	if err != nil {
+		return false
+	}
+	defer unlock()
+	latest, err := readStableRuleState(s.path)
+	if err != nil {
+		return false
+	}
+	s.state = latest
 	rule, ok := stableid.RuleForID(s.state, id)
 	if !ok {
 		return false
@@ -186,10 +220,10 @@ func (s *StableRuleStore) Revoke(id uint64) bool {
 	if status != stableid.Applied {
 		return false
 	}
-	s.state = next
-	if err := s.saveState(); err != nil {
+	if err := s.saveStateValue(next); err != nil {
 		return false
 	}
+	s.state = next
 	return true
 }
 
@@ -202,6 +236,16 @@ func (s *StableRuleStore) Reset() bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, err := lockStableRulesFile(s.path)
+	if err != nil {
+		return false
+	}
+	defer unlock()
+	latest, err := readStableRuleState(s.path)
+	if err != nil {
+		return false
+	}
+	s.state = latest
 	if len(s.state.Rules) == 0 {
 		return false
 	}
@@ -210,19 +254,16 @@ func (s *StableRuleStore) Reset() bool {
 	if next.NextGeneration == 0 {
 		return false
 	}
-	s.state = next
-	if err := s.saveState(); err != nil {
+	if err := s.saveStateValue(next); err != nil {
 		return false
 	}
+	s.state = next
 	return true
 }
 
-// saveState writes a state snapshot while the caller owns the mutation lock.
-// It intentionally uses the same atomic file protocol as Save without
-// reacquiring the store lock.
-func (s *StableRuleStore) saveState() error {
-	file := stableRuleFile{NextGeneration: s.state.NextGeneration}
-	for _, r := range s.state.Rules {
+func (s *StableRuleStore) saveStateValue(state stableid.State) error {
+	file := stableRuleFile{NextGeneration: state.NextGeneration}
+	for _, r := range state.Rules {
 		file.Rules = append(file.Rules, ruleDoc{
 			ID: r.ID, Kind: int(r.Key.Kind), Canonical: r.Key.Canonical,
 			DisplayIdentity: r.DisplayIdentity, Decision: int(r.Decision), Generation: r.Generation,
@@ -232,18 +273,48 @@ func (s *StableRuleStore) saveState() error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(s.path)
+	return writeStableRulesAtomically(s.path, data)
+}
+
+// writeStableRulesAtomically writes policy state through a unique temporary
+// file and renames it into place. A fixed "*.tmp" sibling is unsafe when two
+// rho processes update the same project concurrently: one process can rename
+// or remove the other's partial file.
+func writeStableRulesAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil { // #nosec G306 -- rule store is user-owned policy data
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		_ = os.Remove(tmp)
+	tmpName := tmp.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
 		return err
 	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	removeTemp = false
 	return nil
 }
 

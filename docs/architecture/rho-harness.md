@@ -6,7 +6,7 @@ Rho treats the agent runtime as a product boundary around provider output.
 
 1. Flux normalizes provider protocol responses.
 2. Rho validates and resolves tool metadata.
-3. Permission and sandbox policy runs before execution.
+3. Permission, path-safety, and trust policy runs before host execution.
 4. Tool execution observes timeouts, cancellation, and path boundaries.
 5. Results are redacted, persisted, and returned to the model.
 6. Stream retry and reasoning-only recovery handle provider failures.

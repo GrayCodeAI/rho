@@ -50,7 +50,6 @@ var getEnvExemptions = map[string]bool{
 	"config/deployments_ui":      true, // config package
 	"auth/auth.go":               true, // HOME for token file path
 	"terminal_context.go":        true, // TMUX, STY, TERM_PROGRAM for terminal detection
-	"sandbox/seatbelt.go":        true, // HOME, GOPATH for sandbox policy
 	"prompts/loader.go":          true, // SHELL for prompt context
 	"health/diagnostics.go":      true, // SHELL, RHO_MODEL for health checks
 	"tool/safety.go":             true, // RHO_CONFIG_DIR for security checks
@@ -308,11 +307,11 @@ func TestAllExportedTypesHaveDocComments(t *testing.T) {
 // Session struct. If a field is added or removed there, update this
 // list.
 var legacySessionFields = []string{
-	"Permissions", "AutoMode", "Classifier", "BypassKill", "Mode",
+	"Permissions", "Classifier", "BypassKill", "Mode",
 	"MaxTurns", "MaxBudgetUSD", "AllowedDirs", "PermissionFn",
 	"Memory", "HarrierBridge", "EnhancedMemory",
 	"Cascade", "Lifecycle", "Reflector", "CostTracker",
-	"Autonomy", "Sandbox", "Plan", "Beliefs", "Critic", "Backtrack",
+	"Autonomy", "Plan", "Beliefs", "Critic", "Backtrack",
 	"Limits", "Trajectory", "Shadow", "Snapshots", "ConversationGraph",
 	"Sleeptime", "Activity", "SkillDistiller", "Tracer",
 	"LintLoop", "TestLoop", "FileMentions", "ResponseCache",
@@ -324,7 +323,7 @@ var legacySessionFields = []string{
 	"AutoCompactor", "persistID", "lastPromptTokens",
 	"lastCompletionTokens", "checkpointMgr", "OnCompaction",
 	"Router", "provider", "model", "system",
-	"Cost", "ContainerExecutor", "ContainerRequired",
+	"Cost",
 	"DeploymentRouting",
 }
 

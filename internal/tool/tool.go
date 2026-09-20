@@ -178,6 +178,13 @@ type RiskLevelProvider interface {
 	RiskLevel() string // "low", "medium", "high"
 }
 
+// UntrustedTool marks tools whose implementation is outside rho's built-in
+// capability catalog. They remain executable, but the permission engine must
+// not infer safety from registry membership alone.
+type UntrustedTool interface {
+	Untrusted() bool
+}
+
 // PathProtector checks whether a file path is protected (read-only).
 // engine.ProtectedPaths implements this interface.
 type PathProtector interface {

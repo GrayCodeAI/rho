@@ -129,16 +129,6 @@ func TestProjectPermissionsEmpty(t *testing.T) {
 	}
 }
 
-func TestProjectPermissionsSandboxMode(t *testing.T) {
-	events := []Event{
-		{Type: SandboxMode, Seq: 1, At: time.Now().UTC(), Data: SandboxModeFact{Mode: "strict"}},
-	}
-	ps := ProjectPermissions(events)
-	if ps.CurrentValue != "strict" {
-		t.Errorf("expected 'strict', got %q", ps.CurrentValue)
-	}
-}
-
 func mustJSONRaw(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)

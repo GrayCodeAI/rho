@@ -30,6 +30,7 @@ func runRoot(args ...string) (string, error) {
 	learnAll = false
 	learnWhat, learnWhy, learnLesson = "", "", ""
 	learnCategory = "manual"
+	learnClearYes = false
 
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
@@ -328,7 +329,7 @@ func TestLearnAddListClear(t *testing.T) {
 			t.Fatalf("expected dedup to keep 1 lesson, got: %s", list2)
 		}
 
-		clear, err := runRoot("learn", "clear")
+		clear, err := runRoot("learn", "clear", "--yes")
 		if err != nil {
 			t.Fatalf("unexpected error: %v\n%s", err, clear)
 		}

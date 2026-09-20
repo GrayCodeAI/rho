@@ -7,92 +7,18 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
-	lipgloss "charm.land/lipgloss/v2"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
 	"github.com/mattn/go-runewidth"
 
+	sessionfeature "github.com/GrayCodeAI/rho/internal/features/session"
 	"github.com/GrayCodeAI/rho/internal/session"
-)
-
-// sessionPickerStyles holds the lipgloss styles for the session picker overlay.
-var (
-	sessPickBoxStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Padding(0, 1)
-	sessPickTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-	sessPickDimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	sessPickItemStyle  = lipgloss.NewStyle().Padding(0, 1)
-	sessPickSelStyle   = lipgloss.NewStyle().Padding(0, 1).Background(lipgloss.Color("240")).Foreground(lipgloss.Color("230"))
-	sessPickMatchStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-	sessPickEmptyStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 )
 
 // applySessionPickerFilter filters the session entries based on the current search query.
 // Matches against session ID, preview text, and CWD. Results are scored by relevance
 // and recency.
 func (m *chatModel) applySessionPickerFilter() {
-	query := strings.ToLower(m.sessionPickerInput)
-	if query == "" {
-		// Show all sessions in the original order (newest first from session.List).
-		m.sessionPickerFiltered = make([]session.Entry, len(m.sessionPickerEntries))
-		copy(m.sessionPickerFiltered, m.sessionPickerEntries)
-		m.sessionPickerSel = 0
-		return
-	}
-
-	type scoredEntry struct {
-		entry session.Entry
-		score int
-		idx   int
-	}
-	var results []scoredEntry
-
-	for i, e := range m.sessionPickerEntries {
-		lowerID := strings.ToLower(e.ID)
-		lowerPreview := strings.ToLower(e.Preview)
-		lowerCWD := strings.ToLower(e.CWD)
-		score := 0
-
-		// ID match (highest priority — exact prefix of session ID).
-		if strings.HasPrefix(lowerID, query) {
-			score = 1000
-		} else if strings.Contains(lowerID, query) {
-			score = 800
-		} else if strings.HasPrefix(lowerPreview, query) {
-			score = 600
-		} else if strings.Contains(lowerPreview, query) {
-			score = 500
-		} else if strings.Contains(lowerCWD, query) {
-			score = 400
-		} else if subsequenceMatch(lowerPreview, query) {
-			score = 300
-		} else if subsequenceMatch(lowerID, query) {
-			score = 200
-		}
-
-		if score > 0 {
-			// Boost by recency.
-			recencyBoost := i * 10 / max(len(m.sessionPickerEntries), 1)
-			results = append(results, scoredEntry{
-				entry: e,
-				score: score + recencyBoost,
-				idx:   i,
-			})
-		}
-	}
-
-	// Sort by score descending, then by index descending (most recent first).
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].score > results[i].score ||
-				(results[j].score == results[i].score && results[j].idx > results[i].idx) {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
-
-	m.sessionPickerFiltered = make([]session.Entry, 0, len(results))
-	for _, r := range results {
-		m.sessionPickerFiltered = append(m.sessionPickerFiltered, r.entry)
-	}
+	m.sessionPickerFiltered = sessionfeature.FilterEntries(m.sessionPickerEntries, m.sessionPickerInput)
 	m.sessionPickerSel = 0
 }
 
@@ -114,8 +40,8 @@ func (m *chatModel) renderSessionPickerOverlay(viewWidth int) string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(sessPickTitleStyle.Render("  Session Picker"))
-	b.WriteString(sessPickDimStyle.Render("  (Esc to cancel, Enter to resume)"))
+	b.WriteString(overlayTitleStyle().Render("  Session Picker"))
+	b.WriteString(overlayDimStyle().Render("  (Esc to cancel, Enter to resume)"))
 	b.WriteString("\n\n")
 
 	// Search input display
@@ -124,20 +50,20 @@ func (m *chatModel) renderSessionPickerOverlay(viewWidth int) string {
 		queryDisplay = "type to filter sessions..."
 	}
 	b.WriteString("  ")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Render(icons.Magnify() + " "))
+	b.WriteString(overlaySearchIconStyle().Render(icons.Magnify() + " "))
 	if m.sessionPickerInput == "" {
-		b.WriteString(sessPickDimStyle.Italic(true).Render(queryDisplay))
+		b.WriteString(overlayDimStyle().Italic(true).Render(queryDisplay))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Render(queryDisplay))
+		b.WriteString(overlaySearchValueStyle().Render(queryDisplay))
 	}
 	b.WriteString("\n\n")
 
 	// Results
 	if len(m.sessionPickerFiltered) == 0 {
 		if len(m.sessionPickerEntries) == 0 {
-			b.WriteString(sessPickEmptyStyle.Render("  No saved sessions found"))
+			b.WriteString(overlayDimStyle().Italic(true).Render("  No saved sessions found"))
 		} else {
-			b.WriteString(sessPickEmptyStyle.Render("  No matching sessions"))
+			b.WriteString(overlayDimStyle().Italic(true).Render("  No matching sessions"))
 		}
 	} else {
 		start := 0
@@ -154,17 +80,17 @@ func (m *chatModel) renderSessionPickerOverlay(viewWidth int) string {
 			line := formatSessionEntry(entry, m.sessionPickerInput, boxWidth-4)
 			if i == m.sessionPickerSel {
 				// Selected item: add a marker and use distinct style (consistent with history search).
-				marker := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Render("> ")
-				b.WriteString(sessPickSelStyle.Width(boxWidth).Render(marker + line))
+				marker := overlaySelectionMarkerStyle().Render("> ")
+				b.WriteString(overlaySelectedStyle().Width(boxWidth).Render(marker + line))
 			} else {
-				b.WriteString(sessPickItemStyle.Width(boxWidth).Render("  " + line))
+				b.WriteString(overlayItemStyle().Width(boxWidth).Render("  " + line))
 			}
 			b.WriteString("\n")
 		}
 
 		// Scroll indicator
 		if len(m.sessionPickerFiltered) > maxVisible {
-			b.WriteString(sessPickDimStyle.Render("  " + strconv.Itoa(m.sessionPickerSel+1) + "/" + strconv.Itoa(len(m.sessionPickerFiltered)) + " sessions"))
+			b.WriteString(overlayDimStyle().Render("  " + strconv.Itoa(m.sessionPickerSel+1) + "/" + strconv.Itoa(len(m.sessionPickerFiltered)) + " sessions"))
 		}
 
 		// Share detail for the selected session (Gap-02 P1): deeplink + export
@@ -175,7 +101,7 @@ func (m *chatModel) renderSessionPickerOverlay(viewWidth int) string {
 		}
 	}
 
-	return sessPickBoxStyle.Width(boxWidth).Render(b.String())
+	return overlayBoxStyle().Width(boxWidth).Render(b.String())
 }
 
 // sessionPickerDetailFor returns the cached share detail (deeplink + export
@@ -187,11 +113,11 @@ func (m *chatModel) sessionPickerDetailFor(e session.Entry) string {
 	}
 	var b strings.Builder
 	if e.Model != "" {
-		b.WriteString(sessPickDimStyle.Render("  model: "+e.Model) + "\n")
+		b.WriteString(overlayDimStyle().Render("  model: "+e.Model) + "\n")
 	}
-	b.WriteString(sessPickDimStyle.Render("  export: "+e.ExportPath) + "\n")
+	b.WriteString(overlayDimStyle().Render("  export: "+e.ExportPath) + "\n")
 	if link := session.ShareLinkForID(e.ID); link != "" {
-		b.WriteString(sessPickDimStyle.Render("  share:  " + link))
+		b.WriteString(overlayDimStyle().Render("  share:  " + link))
 	}
 	detail := strings.TrimRight(b.String(), "\n")
 	m.sessionPickerDetailID = e.ID
@@ -258,7 +184,7 @@ func formatSessionEntry(e session.Entry, query string, maxWidth int) string {
 	if query != "" {
 		if idx, matchLen := indexFold(previewDisplay, query); idx >= 0 {
 			matched := previewDisplay[idx : idx+matchLen]
-			previewDisplay = previewDisplay[:idx] + sessPickMatchStyle.Render(matched) + previewDisplay[idx+matchLen:]
+			previewDisplay = previewDisplay[:idx] + overlayMatchStyle().Render(matched) + previewDisplay[idx+matchLen:]
 		}
 	}
 
@@ -313,13 +239,11 @@ func (m *chatModel) resumeSessionByID(id string) (tea.Model, tea.Cmd) {
 	m.sessionID = saved.ID
 	m.invalidateViewportCache()
 	m.messages = []displayMsg{{role: "welcome", content: m.welcomeCache}}
-	msgs := session.ToRuntimeMessages(saved.Messages)
-	for _, sm := range saved.Messages {
-		if sm.Role == "user" || sm.Role == "assistant" {
-			m.messages = append(m.messages, displayMsg{role: sm.Role, content: sm.Content})
-		}
+	hydrated := sessionfeature.Hydrate(saved)
+	for _, message := range hydrated.Display {
+		m.messages = append(m.messages, displayMsg{role: message.Role, content: message.Content})
 	}
-	m.session.LoadMessages(msgs)
+	m.session.LoadMessages(hydrated.Runtime)
 	m.messages = append(m.messages, displayMsg{role: "system", content: "Resumed session " + saved.ID})
 	m.viewDirty = true
 	m.autoScroll = false

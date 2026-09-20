@@ -1,30 +1,18 @@
 package cmd
 
 import (
-	"sort"
+	"fmt"
+	"strings"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
+	commandfeature "github.com/GrayCodeAI/rho/internal/features/commands"
 )
 
-// ChatSubcommand is a single slash-command handler. Implementations
-// live in their own file (cmd/chat_subcommand_<name>.go) and are
-// registered via SubcommandRegistry.Register. The interface is the
-// foundation for decomposing chat_commands.go (1745 lines as of
-// 2026-06) into one file per command.
-//
-// Migration path from the existing handleCommand switch statement:
-//  1. Create a new file cmd/chat_subcommand_<name>.go with a
-//     type implementing ChatSubcommand.
-//  2. Implement the existing handler logic in Handle().
-//  3. Register the subcommand in init() or in a package-level
-//     subcommand registry.
-//  4. Replace the case in handleCommand with a lookup against
-//     the registry.
-//
-// The interface lives in this file (not chat_commands.go) so that
-// subcommand implementations can be defined in any file without
-// modifying chat_commands.go.
+// ChatSubcommand is a single slash-command handler. Implementations live in
+// their own cmd/chat_subcommand_<name>.go file and register themselves with
+// SubcommandRegistry. Keeping the interface here makes the dispatcher a
+// small composition boundary instead of another command implementation file.
 type ChatSubcommand interface {
 	// Name is the canonical command name WITHOUT the leading slash.
 	// e.g. "help" for "/help". Names are lowercase.
@@ -58,30 +46,50 @@ type ChatSubcommand interface {
 // names (and their aliases) to ChatSubcommand implementations. It's
 // safe for concurrent use.
 type SubcommandRegistry struct {
-	mu      sync.RWMutex
+	mu                 sync.RWMutex
+	metadata           *commandfeature.Registry
+	registrationErrors []string
+	// primary remains the typed handler index at the composition boundary.
+	// Metadata and alias policy live in the feature registry.
 	primary map[string]ChatSubcommand
-	aliasOf map[string]string // alias -> primary name
 }
 
-// subcommandRegistry is the package-level registry that
-// subcommand implementations (in chat_subcommand_*.go files) register
-// themselves into via init() functions. The dispatcher in
-// handleCommand will look up commands here once the migration is
-// complete; for now the switch statement in chat_commands.go is
-// still the active dispatch path.
+// subcommandRegistry is the package-level registry that subcommand
+// implementations register with via init functions. handleCommand resolves
+// commands through this registry, then handles plugin and unknown-command
+// fallbacks at the composition boundary.
 //
 // Subcommand files should NOT construct their own registry; they
 // should call subcommandRegistry.Register(&mySubcommand{}) in an
 // init() function.
 var subcommandRegistry = NewSubcommandRegistry()
 
+// validateChatCommandComposition checks the executable command surface after
+// all package init functions have registered their handlers. Keeping this at
+// the composition boundary prevents help/completion metadata from silently
+// drifting away from actual dispatch.
+func validateChatCommandComposition() error {
+	if err := commandfeature.ValidateBuiltIns(); err != nil {
+		return err
+	}
+	if errs := subcommandRegistry.RegistrationErrors(); len(errs) > 0 {
+		return fmt.Errorf("slash command registration failed: %s", strings.Join(errs, "; "))
+	}
+	for _, name := range commandfeature.BuiltInNames() {
+		if _, ok := subcommandRegistry.Lookup(strings.TrimPrefix(name, "/")); !ok {
+			return fmt.Errorf("built-in command %s has no registered handler", name)
+		}
+	}
+	return nil
+}
+
 // NewSubcommandRegistry creates an empty registry. Subcommands are
 // registered via Register() (typically from per-file init() funcs
 // or from a single aggregate init that imports each subcommand).
 func NewSubcommandRegistry() *SubcommandRegistry {
 	return &SubcommandRegistry{
-		primary: make(map[string]ChatSubcommand),
-		aliasOf: make(map[string]string),
+		metadata: commandfeature.NewRegistry(),
+		primary:  make(map[string]ChatSubcommand),
 	}
 }
 
@@ -100,18 +108,22 @@ func (r *SubcommandRegistry) Register(cmd ChatSubcommand) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	name := cmd.Name()
-	if _, exists := r.primary[name]; exists {
-		return // duplicate
-	}
-	for _, alias := range cmd.Aliases() {
-		if _, exists := r.aliasOf[alias]; exists {
-			return // alias collision
-		}
+	if !r.metadata.Register(commandfeature.Spec{
+		Name: name, Aliases: cmd.Aliases(), Description: cmd.Description(), Usage: cmd.Usage(),
+	}) {
+		r.registrationErrors = append(r.registrationErrors, fmt.Sprintf("%q (duplicate, malformed, or colliding alias)", name))
+		return
 	}
 	r.primary[name] = cmd
-	for _, alias := range cmd.Aliases() {
-		r.aliasOf[alias] = name
-	}
+}
+
+// RegistrationErrors reports rejected handlers without exposing mutable
+// registry internals. Composition validation can therefore fail fast with an
+// actionable diagnostic instead of silently shipping a missing command.
+func (r *SubcommandRegistry) RegistrationErrors() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]string(nil), r.registrationErrors...)
 }
 
 // Lookup returns the subcommand for a slash name (without the
@@ -120,15 +132,12 @@ func (r *SubcommandRegistry) Register(cmd ChatSubcommand) {
 func (r *SubcommandRegistry) Lookup(name string) (ChatSubcommand, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if cmd, ok := r.primary[name]; ok {
-		return cmd, true
+	spec, ok := r.metadata.Lookup(name)
+	if !ok {
+		return nil, false
 	}
-	if primary, ok := r.aliasOf[name]; ok {
-		if cmd, ok := r.primary[primary]; ok {
-			return cmd, true
-		}
-	}
-	return nil, false
+	cmd, ok := r.primary[spec.Name]
+	return cmd, ok
 }
 
 // Names returns all primary command names in sorted order. Used by
@@ -136,11 +145,13 @@ func (r *SubcommandRegistry) Lookup(name string) (ChatSubcommand, bool) {
 func (r *SubcommandRegistry) Names() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	names := make([]string, 0, len(r.primary))
-	for n := range r.primary {
-		names = append(names, n)
+	metadata := r.metadata.Names()
+	names := make([]string, 0, len(metadata))
+	for _, name := range metadata {
+		if _, ok := r.primary[name]; ok {
+			names = append(names, name)
+		}
 	}
-	sort.Strings(names)
 	return names
 }
 
@@ -149,14 +160,13 @@ func (r *SubcommandRegistry) Names() []string {
 func (r *SubcommandRegistry) All() []ChatSubcommand {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make([]ChatSubcommand, 0, len(r.primary))
-	for _, cmd := range r.primary {
-		out = append(out, cmd)
+	metadata := r.metadata.All()
+	out := make([]ChatSubcommand, 0, len(metadata))
+	for _, spec := range metadata {
+		if cmd, ok := r.primary[spec.Name]; ok {
+			out = append(out, cmd)
+		}
 	}
-	// Sort by name for deterministic help output.
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Name() < out[j].Name()
-	})
 	return out
 }
 

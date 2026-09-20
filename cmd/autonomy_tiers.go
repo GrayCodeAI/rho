@@ -9,11 +9,11 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 )
 
-// Five container autonomy tiers (Scout → Builder → Operator → Autonomous → Always Ask).
+// Five host-execution autonomy tiers (Scout → Builder → Operator → Autonomous → Always Ask).
 // Supervised ("Always Ask") is included in the Ctrl+L cycle but requires a
 // deliberate double-press to land on (see chat_update.go ctrl+l handling) so
 // repeated key-presses can't accidentally drop the user into max-friction mode.
-var containerAutonomyTiers = []safety.AutonomyLevel{
+var autonomyTiers = []safety.AutonomyLevel{
 	safety.AutonomyBasic,
 	safety.AutonomySemi,
 	safety.AutonomyFull,
@@ -21,7 +21,7 @@ var containerAutonomyTiers = []safety.AutonomyLevel{
 	safety.AutonomySupervised,
 }
 
-var containerAutonomyTierNames = []string{
+var autonomyTierNames = []string{
 	"Scout",
 	"Builder",
 	"Operator",
@@ -29,8 +29,8 @@ var containerAutonomyTierNames = []string{
 	"Always Ask",
 }
 
-// DefaultContainerAutonomy is the tier applied when the Docker container becomes ready.
-const DefaultContainerAutonomy = safety.AutonomySemi
+// DefaultAutonomy is the default host-execution permission tier.
+const DefaultAutonomy = safety.AutonomySemi
 
 // yoloConfirmToken is the exact string a user must type (case-insensitive) to
 // confirm entry into YOLO ("Autonomous") unattended mode via the picker.
@@ -40,16 +40,16 @@ func autonomyTierName(level safety.AutonomyLevel) string {
 	if level == safety.AutonomySupervised {
 		return "Always Ask"
 	}
-	for i, l := range containerAutonomyTiers {
+	for i, l := range autonomyTiers {
 		if l == level {
-			return containerAutonomyTierNames[i]
+			return autonomyTierNames[i]
 		}
 	}
 	return "Builder"
 }
 
 func autonomyTierIndex(level safety.AutonomyLevel) int {
-	for i, l := range containerAutonomyTiers {
+	for i, l := range autonomyTiers {
 		if l == level {
 			return i
 		}
@@ -64,9 +64,9 @@ func autonomyTierIndex(level safety.AutonomyLevel) int {
 func nextAutonomyTier(level safety.AutonomyLevel) safety.AutonomyLevel {
 	idx := autonomyTierIndex(level)
 	for {
-		idx = (idx + 1) % len(containerAutonomyTiers)
-		if containerAutonomyTiers[idx] != safety.AutonomySupervised {
-			return containerAutonomyTiers[idx]
+		idx = (idx + 1) % len(autonomyTiers)
+		if autonomyTiers[idx] != safety.AutonomySupervised {
+			return autonomyTiers[idx]
 		}
 	}
 }
@@ -74,7 +74,7 @@ func nextAutonomyTier(level safety.AutonomyLevel) safety.AutonomyLevel {
 // nextAutonomyTierIncludingSupervised returns the next tier with Supervised
 // included in the cycle (used after the user confirms via double-press).
 func nextAutonomyTierIncludingSupervised(level safety.AutonomyLevel) safety.AutonomyLevel {
-	return containerAutonomyTiers[(autonomyTierIndex(level)+1)%len(containerAutonomyTiers)]
+	return autonomyTiers[(autonomyTierIndex(level)+1)%len(autonomyTiers)]
 }
 
 // isSupervisedPending reports whether the next regular cycle step would land
@@ -105,7 +105,7 @@ func autonomyTierDescription(level safety.AutonomyLevel) string {
 func autonomyTierColor(level safety.AutonomyLevel) color.Color {
 	switch level {
 	case safety.AutonomySupervised:
-		return lipgloss.Color("#9E9E9E") // matches textMuted's dark value
+		return textDisabled
 	case safety.AutonomyBasic:
 		return tierInspect
 	case safety.AutonomySemi:

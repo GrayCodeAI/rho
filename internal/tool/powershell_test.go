@@ -22,11 +22,27 @@ func TestPowerShellTool_DestructiveBlocked(t *testing.T) {
 	}
 }
 
+func TestPowerShellTool_DestructiveCmdletBlocked(t *testing.T) {
+	ps := PowerShellTool{}
+	_, err := ps.Execute(context.Background(), json.RawMessage(`{"command":"Remove-Item -Recurse ./build"}`))
+	if err == nil || err.Error() != "command blocked: contains a destructive pattern" {
+		t.Fatalf("expected destructive cmdlet block, got: %v", err)
+	}
+}
+
 func TestPowerShellTool_SuspiciousBlocked(t *testing.T) {
 	ps := PowerShellTool{}
 	_, err := ps.Execute(context.Background(), json.RawMessage(`{"command":"eval bad"}`))
 	if err == nil || err.Error() != "command blocked: flagged as suspicious" {
 		t.Fatalf("expected suspicious block error, got: %v", err)
+	}
+}
+
+func TestPowerShellTool_InvocationBlocked(t *testing.T) {
+	ps := PowerShellTool{}
+	_, err := ps.Execute(context.Background(), json.RawMessage(`{"command":"Invoke-Expression 'Get-ChildItem'"}`))
+	if err == nil || err.Error() != "command blocked: flagged as suspicious" {
+		t.Fatalf("expected PowerShell code-evaluation block, got: %v", err)
 	}
 }
 

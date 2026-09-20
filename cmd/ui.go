@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -22,12 +23,11 @@ func CanPrompt() bool {
 
 // confirmDestructive prompts the user to confirm a destructive, hard-to-undo
 // operation. It returns true only on an explicit "y"/"yes". When the user is
-// not interactive (--quiet, piped stdin, or no TTY), it returns true so
-// scripts and automation are never blocked. A declined prompt returns false
-// with no error; callers should abort the operation and exit cleanly.
+// not interactive (--quiet, piped stdin, or no TTY), it fails closed so a
+// destructive command cannot be approved accidentally by automation.
 func confirmDestructive(prompt string) (bool, error) {
 	if !CanPrompt() {
-		return true, nil
+		return false, fmt.Errorf("non-interactive destructive action requires explicit confirmation")
 	}
 	input := openPromptInput()
 	defer input.close()

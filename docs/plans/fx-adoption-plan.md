@@ -36,7 +36,7 @@ features:
 |---|---|---|
 | Native single binary | Go static binary and cross-platform release builds | Keep Rho implementation |
 | Agent loop | `internal/engine` | Keep Rho implementation |
-| Permission and sandbox split | `internal/engine/safety`, `internal/sandbox` | Harden and document |
+| Permission and host-policy split | `internal/engine/safety`, `internal/permissions`, `internal/trust` | Harden and document |
 | `ask`/automatic approval behavior | Autonomy profiles, governance, grants, hooks | Add compatibility aliases only |
 | Child agents | `internal/multiagent`, continuable children, cold resume | Add observability and configuration polish |
 | Sessions | `internal/session`, WAL, JSONL, recovery, fork, replay | Add unified status integration |

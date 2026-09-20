@@ -84,3 +84,16 @@ func TestProfile_OverridesRoundtrip(t *testing.T) {
 		t.Fatal("auto_network should be marked overridden")
 	}
 }
+
+func TestProfile_CloneIsIndependent(t *testing.T) {
+	original := ProfileFromLevel(AutonomyFull)
+	original.Override("auto_network", false)
+	clone := original.Clone()
+	if clone == nil || clone.Level != original.Level || clone.AutoNetwork != original.AutoNetwork {
+		t.Fatalf("clone did not preserve profile state: original=%#v clone=%#v", original, clone)
+	}
+	clone.Override("auto_network", true)
+	if original.AutoNetwork {
+		t.Fatal("mutating a cloned profile changed the live profile")
+	}
+}

@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     # GrayCodeAI sibling repos — the public Go proxy has stale v0.1.0 tags
-    # (post-history-rewrite), so resolve them locally like the Dockerfile.
+    # (post-history-rewrite), so resolve them locally in the Nix build.
     flux   = { url = "github:GrayCodeAI/flux";   flake = false; };
     merlin = { url = "github:GrayCodeAI/merlin"; flake = false; };
     kestrel   = { url = "github:GrayCodeAI/kestrel";   flake = false; };

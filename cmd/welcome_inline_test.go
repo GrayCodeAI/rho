@@ -112,9 +112,9 @@ func TestBuildWelcomeMessage_ShortTerminalUsesCompactCopy(t *testing.T) {
 func TestBuildWelcomeMessage_WideTerminalUsesRhoWordmark(t *testing.T) {
 	out := buildWelcomeMessage(nil, "", nil, nil, rhoconfig.Settings{}, 0, false, 120, 40)
 	for _, want := range []string{
-		"___     ___    _________",
-		"(\\.|\\/|./)",
-		"|0\\/0|",
+		" ____  _   _  ___ ",
+		"|  _ \\| | | |/ _ \\ ",
+		"|_| \\_\\_| |_|\\___/",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("wide welcome missing rho wordmark line %q in:\n%s", want, out)
@@ -122,10 +122,10 @@ func TestBuildWelcomeMessage_WideTerminalUsesRhoWordmark(t *testing.T) {
 	}
 }
 
-func TestBuildWelcomeMessage_RhoWordmarkBlinks(t *testing.T) {
+func TestBuildWelcomeMessage_RhoWordmarkIsStatic(t *testing.T) {
 	out := buildWelcomeMessage(nil, "", nil, nil, rhoconfig.Settings{}, 0, true, 120, 40)
-	if !strings.Contains(out, "|-\\/-|") {
-		t.Fatalf("blinking welcome should close the rho's eyes, got:\n%s", out)
+	if !strings.Contains(out, " ____  _   _  ___ ") {
+		t.Fatalf("blinking welcome should retain the RHO wordmark, got:\n%s", out)
 	}
 }
 

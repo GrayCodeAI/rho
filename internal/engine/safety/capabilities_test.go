@@ -25,3 +25,15 @@ func TestToolPolicyForCanonicalAliases(t *testing.T) {
 		t.Fatalf("bash alias did not resolve: %#v", got)
 	}
 }
+
+func TestToolPolicyForBuiltInSurfaceIsDeclared(t *testing.T) {
+	for _, name := range []string{
+		"ToolSearch", "SessionQuery", "Skill", "Agent", "TodoWrite",
+		"TerminalCreate", "TerminalRead", "RequestCredential",
+	} {
+		policy := ToolPolicyFor(name)
+		if !isKnownTool(name) {
+			t.Fatalf("built-in tool %q has no declared capability policy: %#v", name, policy)
+		}
+	}
+}

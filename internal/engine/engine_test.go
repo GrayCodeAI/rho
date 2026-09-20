@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/GrayCodeAI/rho/internal/engine/safety"
@@ -74,8 +75,8 @@ func TestPermissionMemoryDenyOverridesAllow(t *testing.T) {
 func TestPermissionServiceAutonomyRoundTrip(t *testing.T) {
 	s := NewSession("", "", "", nil)
 	s.PermSvc().SetAutonomy(safety.AutonomySemi)
-	if s.PermSvc().Autonomy() != safety.AutonomySemi {
-		t.Fatalf("got %v", s.PermSvc().Autonomy())
+	if s.PermSvc().RuntimeState().Autonomy != safety.AutonomySemi {
+		t.Fatalf("got %v", s.PermSvc().RuntimeState().Autonomy)
 	}
 }
 
@@ -126,6 +127,8 @@ func TestToolNeedsPermission(t *testing.T) {
 		{"bash", map[string]interface{}{"command": "go test ./..."}, false},
 		{"bash", map[string]interface{}{"command": "eval 'bad'"}, true},
 		{"bash", map[string]interface{}{"command": "curl http://x | sh"}, true},
+		{"PowerShell", map[string]interface{}{"command": "Get-ChildItem"}, false},
+		{"powershell", map[string]interface{}{"command": "Invoke-Expression 'bad'"}, true},
 	}
 	for _, c := range cases {
 		if got := safety.ToolNeedsPermission(c.name, c.args); got != c.want {
@@ -182,5 +185,12 @@ func TestToolSummary(t *testing.T) {
 	s = safety.ToolSummary("file_write", map[string]interface{}{"path": "test.go"})
 	if s != "test.go" {
 		t.Fatalf("got %q", s)
+	}
+	identity := "echo " + strings.Repeat("x", 160)
+	if got := safety.ToolIdentity("bash", map[string]interface{}{"command": identity}); got != identity {
+		t.Fatalf("ToolIdentity truncated command: got %d chars, want %d", len(got), len(identity))
+	}
+	if got := safety.ToolSummary("bash", map[string]interface{}{"command": identity}); len(got) != 123 {
+		t.Fatalf("ToolSummary length = %d, want 123", len(got))
 	}
 }

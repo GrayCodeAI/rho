@@ -50,3 +50,24 @@ func TestApplyThemeUnknownIsNoop(t *testing.T) {
 		t.Error("ApplyTheme with an unknown name must not change state")
 	}
 }
+
+func TestApplyThemeRefreshesStatusBarPalette(t *testing.T) {
+	restoreThemeGlobals(t)
+
+	ApplyTheme("tau")
+	if statusCWDColor != cwdBlue {
+		t.Fatalf("status cwd color = %v, want live cwd color %v", statusCWDColor, cwdBlue)
+	}
+}
+
+func TestApplyThemeRefreshesRawDiffPalette(t *testing.T) {
+	restoreThemeGlobals(t)
+	before := ansiDone
+	ApplyTheme("dracula")
+	if ansiDone == before {
+		t.Fatal("theme switch should update raw ANSI diff colors")
+	}
+	if got := DefaultDiffTheme().Added; got != ansiDone {
+		t.Fatalf("diff theme added color = %q, want active ANSI color %q", got, ansiDone)
+	}
+}

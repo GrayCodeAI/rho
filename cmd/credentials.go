@@ -30,9 +30,13 @@ var credentialsRemoveCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
-		ok, err := confirmDestructive(fmt.Sprintf("Remove stored API key(s) for %q from %s?", args[0], rhoconfig.CredentialStoreName()))
-		if err != nil {
-			return err
+		ok, _ := cmd.Flags().GetBool("yes")
+		if !ok {
+			var err error
+			ok, err = confirmDestructive(fmt.Sprintf("Remove stored API key(s) for %q from %s?", args[0], rhoconfig.CredentialStoreName()))
+			if err != nil {
+				return err
+			}
 		}
 		if !ok {
 			cmd.Printf("%s\n", auditTint("Cancelled.", textMuted))
@@ -49,5 +53,6 @@ var credentialsRemoveCmd = &cobra.Command{
 
 func init() {
 	credentialsCmd.AddCommand(credentialsStatusCmd)
+	credentialsRemoveCmd.Flags().Bool("yes", false, "confirm removing stored credentials")
 	credentialsCmd.AddCommand(credentialsRemoveCmd)
 }

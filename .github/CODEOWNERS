@@ -24,7 +24,6 @@
 /.github/        @GrayCodeAI/devops-team
 /Makefile        @GrayCodeAI/devops-team
 /.goreleaser.yml @GrayCodeAI/devops-team
-/Dockerfile      @GrayCodeAI/devops-team
 
 # Versioning + release artefacts
 /VERSION         @GrayCodeAI/maintainers

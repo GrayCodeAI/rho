@@ -5,10 +5,15 @@ import "testing"
 func TestCommandPaletteBuildEntriesUsesSlashCommands(t *testing.T) {
 	cp := NewCommandPalette(120)
 	want := map[string]bool{}
+	seen := map[string]bool{}
 	for _, cmd := range slashCommands() {
 		want[cmd] = false
 	}
 	for _, entry := range cp.entries {
+		if seen[entry.Name] {
+			t.Fatalf("command palette contains duplicate entry %s", entry.Name)
+		}
+		seen[entry.Name] = true
 		if _, ok := want[entry.Name]; ok {
 			want[entry.Name] = true
 		}

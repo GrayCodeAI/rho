@@ -9,9 +9,9 @@ Linux Foundation / Agentic AI Foundation)
 
 Goose's audit against rho found that most of its runtime concepts already have
 a native rho implementation (providers via flux, sessions, MCP, ACP, skills,
-native sandboxing, permissions). The genuinely novel, rho-relevant ideas are
-adopted here in Go, without copying Rust code or weakening rho's native
-sandboxing model.
+host-native policy, permissions). The genuinely novel, rho-relevant ideas are
+adopted here in Go, without copying Rust code or adding a second execution
+sandbox runtime.
 
 ## Existing Rho Capabilities
 
@@ -22,7 +22,7 @@ sandboxing model.
 | MCP (client+server) | `internal/mcp` + sibling `falcon` | Keep rho |
 | ACP | `internal/acp` | Keep rho |
 | Extensions/skills | `internal/plugin`, skills registry | Keep rho |
-| OS sandboxing | `internal/sandbox` seatbelt/landlock/seccomp/ACL | **rho ahead** (goose has none) |
+| Execution safety | `internal/engine/safety`, path guards, trust policy | Host-native, fail-closed |
 | OSV malware gate | `internal/permissions/osv_checker.go` (`CheckCommand`/`CheckPackage`) | Keep rho |
 | Hints / AGENTS.md | `internal/config` AGENTS.md loader | **Adopt** @file references + subdir hints |
 | Context compaction | sibling `shrike` (Shrike) + `internal/engine/compaction` | **Adopt** structured-summary retry ladder |
@@ -46,7 +46,7 @@ or MCP stdio processes by filtering dangerous environment overrides
 
 ### Scope and ownership
 
-- Primary: `internal/sandbox` (or `internal/permissions` next to the OSV
+- Primary: `internal/env` (or `internal/permissions` next to the OSV
   checker) — a `sanitizeEnv` / `SafeEnv` helper.
 - Consumers: `internal/mcp` stdio launch path and `internal/plugin` package
   execution.
@@ -70,7 +70,7 @@ or MCP stdio processes by filtering dangerous environment overrides
 - Existing extension launch behavior is unchanged when no disallowed keys are
   present.
 
-> Adopted: `internal/sandbox/env_sanitize.go` (`SanitizeEnv`) wired into
+> Adopted: `internal/env/sanitize.go` (`SanitizeEnv`) wired into
 > `internal/plugin/bridge.go`. Unit-tested.
 
 ## P0: AGENTS.md `@file` References with Boundary + Budgets

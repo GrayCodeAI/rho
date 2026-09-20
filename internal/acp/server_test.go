@@ -79,10 +79,16 @@ func TestACP_InitializeAndPrompt(t *testing.T) {
 			gotInit = true
 			var r struct {
 				ProtocolVersion int `json:"protocolVersion"`
+				RhoCapabilities struct {
+					Isolation []string `json:"isolation"`
+				} `json:"rhoCapabilities"`
 			}
 			_ = json.Unmarshal(m.Result, &r)
 			if r.ProtocolVersion != ProtocolVersion {
 				t.Errorf("initialize protocolVersion = %d, want %d", r.ProtocolVersion, ProtocolVersion)
+			}
+			if strings.Join(r.RhoCapabilities.Isolation, ",") != "none,worktree" {
+				t.Errorf("initialize isolation = %v, want [none worktree]", r.RhoCapabilities.Isolation)
 			}
 		case hasID(m, 2):
 			gotNew = true

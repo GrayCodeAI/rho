@@ -122,9 +122,9 @@ func (m reviewTUIModel) View() tea.View {
 		return tea.View{}
 	}
 
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	header := lipgloss.NewStyle().Bold(true).Foreground(rhoColor)
 	dim := lipgloss.NewStyle().Faint(true)
-	selected := lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236"))
+	selected := lipgloss.NewStyle().Bold(true).Background(bgCode).Foreground(textPrimary)
 
 	var b strings.Builder
 	b.WriteString(header.Render("  rho review") + dim.Render("  j/k:nav  enter:expand  c:close  f:fix  r:refresh  q:quit") + "\n")

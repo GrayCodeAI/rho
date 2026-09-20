@@ -23,7 +23,7 @@ func (ToolHealthTool) Name() string      { return "ToolHealth" }
 func (ToolHealthTool) RiskLevel() string { return "low" }
 func (ToolHealthTool) Aliases() []string { return []string{"tool-health", "tools_health"} }
 func (ToolHealthTool) Description() string {
-	return "Inspect Rho's registered/model-visible tools and common runtime prerequisites (git, go, node, Python, Docker, gh, and Chrome) without revealing secrets or changing state."
+	return "Inspect Rho's registered/model-visible tools and common runtime prerequisites (git, go, node, Python, gh, and Chrome) without revealing secrets or changing state."
 }
 
 // Schema returns the typed input schema. Parameters() delegates to it so the
@@ -125,7 +125,6 @@ func runtimePrerequisites() []prerequisiteStatus {
 		{"node", "node"},
 		{"npm", "npm"},
 		{"python", "python3"},
-		{"docker", "docker"},
 		{"github_cli", "gh"},
 		{"chrome", "google-chrome"},
 		{"chromium", "chromium"},

@@ -36,7 +36,7 @@ GORELEASER   := $(GOBIN_DIR)/goreleaser
 # ---------------------------------------------------------------------------
 # Phony declarations (alphabetical).
 # ---------------------------------------------------------------------------
-.PHONY: all bench boundaries build check-replace ci clean ecosystem-guard flux-client-guard flux-engine-guard manifest-guard peer-guard internal-layers-guard package-boundaries-guard release-parity cover cover-new fmt help install lint lint-fix \
+.PHONY: all bench boundaries build check-replace ci clean ecosystem-guard feature-boundaries-guard flux-client-guard flux-engine-guard manifest-guard peer-guard internal-layers-guard package-boundaries-guard release-parity cover cover-new fmt help install lint lint-fix \
         release security setup smoke path sync test test-10x test-live test-new test-race tidy version vet api-docs api-validate workspace
 
 check-replace: ## Fail if go.mod has local replace directives (run before tagging)
@@ -139,7 +139,10 @@ internal-layers-guard: ## Enforce one-way dependencies across stable Rho interna
 package-boundaries-guard: ## Enforce AST/package-graph boundaries with file/line diagnostics.
 	bash ./scripts/check-package-boundaries.sh
 
-boundaries: manifest-guard check-replace ecosystem-guard flux-client-guard flux-engine-guard peer-guard internal-layers-guard package-boundaries-guard ## Alias for all boundary guards (matches `make boundaries` in engine repos).
+feature-boundaries-guard: ## Prevent feature packages from importing delivery or sibling features.
+	bash ./scripts/check-feature-boundaries.sh
+
+boundaries: manifest-guard check-replace ecosystem-guard feature-boundaries-guard flux-client-guard flux-engine-guard peer-guard internal-layers-guard package-boundaries-guard ## Alias for all boundary guards (matches `make boundaries` in engine repos).
 
 release-parity: ## Verify every go.mod ecosystem version resolves to a reachable remote commit.
 	bash ./scripts/check-module-release-parity.sh

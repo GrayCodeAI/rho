@@ -195,8 +195,8 @@ func TestSession_SetAutonomy(t *testing.T) {
 	s := newMockSession(mc)
 
 	s.PermSvc().SetAutonomy(safety.AutonomyYOLO)
-	if s.PermSvc().Autonomy() != safety.AutonomyYOLO {
-		t.Errorf("SetAutonomy did not take effect, got %v", s.PermSvc().Autonomy())
+	if s.PermSvc().RuntimeState().Autonomy != safety.AutonomyYOLO {
+		t.Errorf("SetAutonomy did not take effect, got %v", s.PermSvc().RuntimeState().Autonomy)
 	}
 }
 

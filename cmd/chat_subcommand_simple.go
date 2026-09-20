@@ -232,13 +232,14 @@ func init() {
 		},
 	})
 
-	// /vibe — enter vibe coding mode
+	// /vibe — start an iterative build workflow while retaining the active
+	// permission policy. This is a prompt preset, not an execution bypass.
 	subcommandRegistry.Register(&delegatingCommand{
 		name:        "vibe",
-		description: "enter vibe coding mode (auto-apply all changes)",
+		description: "start an iterative build workflow (permission policy applies)",
 		usage:       "/vibe [additional prompt]",
 		handler: func(m *chatModel, args []string, text string) (tea.Model, tea.Cmd) {
-			prompt := "Enter vibe coding mode. Auto-apply all changes, run tests after each edit, and iterate until tests pass. Start by reading the project structure."
+			prompt := "Start an iterative build workflow under the active permission policy. Read the project structure, make the requested changes, run relevant tests after each change, and iterate until tests pass."
 			if len(args) > 0 {
 				prompt = strings.TrimSpace(strings.TrimPrefix(text, "/vibe"))
 			}
@@ -652,7 +653,7 @@ func init() {
 		description: "show keybindings",
 		usage:       "",
 		handler: func(m *chatModel, args []string, text string) (tea.Model, tea.Cmd) {
-			m.messages = append(m.messages, displayMsg{role: "system", content: "Keybindings:\n  Enter           — Submit\n  Ctrl+C          — Cancel/Exit\n  Ctrl+Shift+C    — Copy (input draft or chat)\n  Ctrl+K          — Native text selection\n  Ctrl+L          — Cycle autonomy tier\n  Up/Down         — History\n  Tab             — Complete\n  /mouse off      — Enable click-drag copy"})
+			m.messages = append(m.messages, displayMsg{role: "system", content: "Keybindings:\n  Enter           — Submit\n  Ctrl+C          — Cancel/Exit\n  Ctrl+Shift+C    — Copy (input draft or chat)\n  Ctrl+K          — Command palette\n  Ctrl+L          — Cycle autonomy tier\n  Up/Down         — History\n  Tab             — Complete\n  /select         — Native text selection\n  /mouse off      — Enable click-drag copy"})
 			return m, nil
 		},
 	})
@@ -808,10 +809,10 @@ func init() {
 		},
 	})
 
-	// /autonomy — show/set trust tier, sandbox, and rules
+	// /autonomy — show/set trust tier, permissions, and rules
 	subcommandRegistry.Register(&delegatingCommand{
 		name:        "autonomy",
-		description: "show/set trust tier, sandbox, and rules (delegates to handleAutonomyCommand)",
+		description: "show/set trust tier, permissions, and rules (delegates to handleAutonomyCommand)",
 		usage:       "/autonomy [subcommand]",
 		handler: func(m *chatModel, args []string, text string) (tea.Model, tea.Cmd) {
 			next, cmd := m.handleAutonomyCommand(append([]string{"/autonomy"}, args...))

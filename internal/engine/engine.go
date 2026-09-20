@@ -117,7 +117,7 @@ func (s *Session) compact(ctx context.Context) {
 }
 
 // readFileContent reads a file from disk and returns its content as a string.
-// Used by critic and sandbox to capture original file state.
+// Used by critic and validation to capture original file state.
 func readFileContent(path string) (string, error) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path provided by caller via tool/task parameters, inherent to this dev CLI's file operations
 	if err != nil {

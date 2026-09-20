@@ -55,8 +55,7 @@ func runMouseScrollSplitPanePass(t *testing.T, pass int) {
 	}
 
 	up := tea.KeyPressMsg{Code: tea.KeyUp}
-	m.history = []string{"first", "second"}
-	m.historyIdx = len(m.history)
+	m.history.SetEntries([]string{"first", "second"})
 	m.input.SetValue("")
 	if m.routeKeyToViewport(up) {
 		t.Fatalf("pass %d: up in prompt focus should not route to viewport", pass)
@@ -112,9 +111,8 @@ func TestUpdate_InputHistoryWhileWaiting(t *testing.T) {
 		width:    80,
 		uiFocus:  focusPrompt,
 		waiting:  true,
-		history:  []string{"first", "second"},
 	}
-	m.historyIdx = len(m.history)
+	m.history.SetEntries([]string{"first", "second"})
 	m = m.withSyncedLayout()
 
 	up := tea.KeyPressMsg{Code: tea.KeyUp}

@@ -24,8 +24,8 @@
 
 <!--
   Describe how you tested. Paste output of `make test` and `make lint`. If you
-  added new tests, list them. If you could not run something locally (e.g.
-  Linux-only sandbox tests on macOS), call that out.
+  added new tests, list them. If you could not run something locally (for
+  example, a platform-specific integration test), call that out.
 -->
 
 ```text

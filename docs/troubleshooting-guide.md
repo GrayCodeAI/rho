@@ -15,7 +15,6 @@ A practical guide for diagnosing common rho daemon and CLI issues.
 - [Audit Log Issues](#audit-log-issues)
 - [Tool Execution Fails](#tool-execution-fails)
 - [Performance Issues](#performance-issues)
-- [Docker Issues](#docker-issues)
 - [Systemd Issues](#systemd-issues)
 
 ---
@@ -300,21 +299,6 @@ lost, all entries become unverifiable. **Always back up the entire
 
 ## Tool Execution Fails
 
-### "Container not ready — tools are disabled"
-
-Tools that require sandboxing are disabled until the sandbox container
-is running. Check the sandbox status:
-
-```bash
-rho sandbox status
-```
-
-Start the sandbox:
-
-```bash
-rho sandbox start
-```
-
 ### Permission denied for a tool
 
 The permission service may have denied the tool execution. Check the
@@ -345,33 +329,6 @@ large contexts can consume significant memory. Consider:
 - Periodic session cleanup
 - Limiting `max_turns` per session
 - Using the `/v1/sessions` endpoint to monitor active sessions
-
----
-
-## Docker Issues
-
-### Daemon exits immediately
-
-The default entrypoint runs `rho daemon start --host 0.0.0.0 --port 4590`.
-Non-loopback binds require both an API key and native TLS; an API key alone
-does not protect credentials or conversation data from plaintext interception.
-
-**Fix:**
-
-```bash
-docker run -p 4590:4590 \
-  -e RHO_DAEMON_API_KEY=$(openssl rand -base64 32) \
-  -v "$PWD/certs:/certs:ro" \
-  ghcr.io/graycodeai/rho-daemon:latest \
-  --tls-cert /certs/server.crt --tls-key /certs/server.key
-```
-
-### Health check fails in container
-
-The container's `HEALTHCHECK` probes `http://127.0.0.1:4590/v1/health`.
-If the daemon is still starting up, the health check may fail before the
-`start-period` expires (10 seconds). Increase the health check interval
-or start-period if needed.
 
 ---
 
