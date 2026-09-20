@@ -374,9 +374,9 @@ func (m chatModel) View() tea.View {
 			}
 			rightLine += ctxRendered
 		}
-		// Keep workspace path/branch in the compact bottom status bar only;
-		// the upper chrome is reserved for connection state.
-		topRow := layoutFooterRow("", rightLine, footerW)
+		// Keep permission posture on the left and connection/model metadata on
+		// the right. Neither belongs in the transcript or workspace footer.
+		topRow := layoutFooterRow(renderPermissionStatus(&m), rightLine, footerW)
 		bottomBar.WriteString(m.finishFooterLine(topRow, totalW) + "\n")
 		if m.manualCompacting {
 			compactLine := clipFooterLine(m.renderCompactProgressPanel(footerW), footerW)
@@ -606,19 +606,34 @@ func renderPromptBody(content string, width int) string {
 // content differs by policy layer, but width safety, countdown placement, and
 // visual hierarchy must remain identical.
 func renderPromptCard(title, body, options, hint string, border color.Color, width int, timeoutAt time.Time) string {
+	cardWidth := promptCardWidth(width)
 	rows := []string{title, "", body}
 	if !timeoutAt.IsZero() {
-		rows = append(rows, "", renderCountdownBar(timeoutAt, width-10))
+		rows = append(rows, "", renderCountdownBar(timeoutAt, cardWidth-6))
 	}
 	rows = append(rows, "", options, hint)
 	inner := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	box := lipgloss.NewStyle().
+		Width(cardWidth).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(border).
 		Background(permissionBg).
 		Padding(0, 1).
 		Render(inner)
-	return lipgloss.NewStyle().MaxWidth(width - 4).Render(box)
+	return box
+}
+
+// promptCardWidth keeps approvals readable on wide terminals. A permission
+// request is a focused decision, not a full-width status panel.
+func promptCardWidth(width int) int {
+	if width < 20 {
+		return 20
+	}
+	cardWidth := width - 4
+	if cardWidth > 96 {
+		cardWidth = 96
+	}
+	return cardWidth
 }
 
 // renderCountdownBar renders a horizontal progress bar showing time remaining

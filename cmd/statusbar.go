@@ -9,6 +9,7 @@ import (
 
 	"github.com/GrayCodeAI/rho/internal/engine/safety"
 
+	"github.com/GrayCodeAI/rho/internal/engine"
 	"github.com/GrayCodeAI/rho/internal/engine/cost"
 
 	tea "charm.land/bubbletea/v2"
@@ -86,6 +87,30 @@ func renderStatusBar(m *chatModel, width int) []string {
 	// Narrow: fold a compact control-plane chip into the left cluster.
 	left = mergeNarrowControlChip(m, left)
 	return []string{layoutFooterRow(left, right, width)}
+}
+
+// renderPermissionStatus is the left side of the model/status row. Permission
+// posture is persistent session state, so it belongs in chrome rather than in
+// the transcript as a stream of mode-change messages.
+func renderPermissionStatus(m *chatModel) string {
+	if m == nil || m.session == nil || m.session.PermSvc() == nil {
+		return ""
+	}
+	level := effectivePermissionTier(m.session)
+	parts := []string{autonomyTierStyle(level).Render("Permission · " + autonomyTierName(level))}
+
+	trust := engine.ProjectTrust("")
+	trustLabel := "Untrusted"
+	trustStyle := statusDimStyle
+	if trust.Trusted {
+		trustLabel = "Trusted"
+		trustStyle = lipgloss.NewStyle().Foreground(tierTrust).Inline(true)
+	} else if trust.Blocked {
+		trustLabel = "Blocked"
+		trustStyle = lipgloss.NewStyle().Foreground(tierTrust).Inline(true)
+	}
+	parts = append(parts, trustStyle.Render(trustLabel))
+	return strings.Join(parts, statusDimStyle.Render("  ·  "))
 }
 
 // stripANSI removes CSI sequences for empty checks (status bar only).
@@ -380,12 +405,6 @@ func renderStatusBarRight(m *chatModel) string {
 				parts = append(parts, statusDimStyle.Render(ctxText))
 			}
 		}
-	}
-
-	// Persistent autonomy tier indicator — always visible for safety awareness.
-	if m.session != nil && m.session.PermSvc() != nil {
-		level := effectivePermissionTier(m.session)
-		parts = append(parts, autonomyTierStyle(level).Render("◈ "+autonomyTierName(level)))
 	}
 
 	return strings.Join(parts, statusDimStyle.Render(" · "))

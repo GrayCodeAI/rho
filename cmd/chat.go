@@ -42,6 +42,7 @@ import (
 	rhostorage "github.com/GrayCodeAI/rho/internal/storage"
 	"github.com/GrayCodeAI/rho/internal/system/staleness"
 	"github.com/GrayCodeAI/rho/internal/tool"
+	"github.com/GrayCodeAI/rho/internal/tui"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
 )
 
@@ -330,6 +331,9 @@ func newChatModelWithRegistry(ref *progRef, systemPrompt string, settings rhocon
 		Enabled:        true,
 		MaxAutoApprove: safety.AutonomySemi,
 		ConfirmFn: func(req engine.ApprovalRequest) engine.ApprovalResponse {
+			if sess.PermSvc() != nil && sess.PermSvc().RuntimeState().Autonomy == safety.AutonomyYOLO {
+				return engine.ApprovalApprove
+			}
 			response := make(chan engine.ApprovalResponse, 1)
 			ref.Send(approvalAskMsg{req: req, response: response})
 			select {
@@ -528,11 +532,11 @@ func (m *chatModel) refreshInputPlaceholder() {
 	}
 	switch work {
 	case engine.WorkModePlan:
-		m.input.Placeholder = "Design architecture or draft plan...  ·  / commands  ·  ? help"
+		m.input.Placeholder = "Design architecture or draft plan...  ·  /select copy  ·  ? help"
 	case engine.WorkModeReview:
-		m.input.Placeholder = "Audit diffs, security, or PRs...  ·  / commands  ·  ? help"
+		m.input.Placeholder = "Audit diffs, security, or PRs...  ·  /select copy  ·  ? help"
 	default:
-		m.input.Placeholder = "Build, refactor, or run commands...  ·  / commands  ·  ? help"
+		m.input.Placeholder = "Build, refactor, or run commands...  ·  /select copy  ·  ? help"
 	}
 }
 
@@ -726,16 +730,24 @@ func runChat() error {
 
 	finalModel, err := p.Run()
 	writeTerminalMouse(disableMouseCSI)
+	// Kitty graphics are not scoped to Bubble Tea's alternate screen. Remove
+	// the optional welcome mascot before the farewell is written so shutdown
+	// leaves only the final text message in the terminal.
+	_ = tui.ClearGraphics(os.Stderr)
 	if err != nil {
 		return err
 	}
-	fm, ok := finalModel.(chatModel)
-	if !ok {
-		return fmt.Errorf("unexpected final model type: %T", finalModel)
+	fm, err := finalChatModel(finalModel)
+	if err != nil {
+		return err
 	}
 	if fm.quitting {
 		fm.saveSession()
-		fmt.Print(formatQuitResumeMessage(fm.sessionID))
+		// Bubble Tea restores the previous screen before returning. Clear that
+		// frame and any terminal-persistent mascot so shutdown has one clean,
+		// predictable final state.
+		fmt.Print("\x1b[2J\x1b[H")
+		fmt.Println("Thank you for using Rho!")
 		return nil
 	}
 	rhoC := ansiOrange
@@ -789,4 +801,19 @@ func runChat() error {
 		fmt.Println(dimStyle.Render(fmt.Sprintf("To resume this session, run: rho --resume %s", fm.sessionID)))
 	}
 	return nil
+}
+
+// finalChatModel normalizes Bubble Tea's shutdown model. Bubble Tea may return
+// either the value passed to NewProgram or its pointer after updates; both are
+// valid representations of the same chat state.
+func finalChatModel(model tea.Model) (chatModel, error) {
+	switch m := model.(type) {
+	case chatModel:
+		return m, nil
+	case *chatModel:
+		if m != nil {
+			return *m, nil
+		}
+	}
+	return chatModel{}, fmt.Errorf("unexpected final model type: %T", model)
 }

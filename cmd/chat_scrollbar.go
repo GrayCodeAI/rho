@@ -50,9 +50,6 @@ func (m chatModel) chatViewportWidth(totalWidth int) int {
 	if totalWidth <= 0 {
 		return 0
 	}
-	if mainWidth := m.chatMainWidth(totalWidth); mainWidth != totalWidth {
-		totalWidth = mainWidth
-	}
 	if m.chatHasOverflow() && totalWidth > scrollbarWidth {
 		return totalWidth - scrollbarWidth
 	}
@@ -171,13 +168,13 @@ func (m chatModel) renderChatPane() string {
 
 	if !m.chatScrollbarVisible() {
 		chatView = padToHeight(chatView, origVpH)
-		return m.joinChatSidebar(chatView, origVpH)
+		return chatView
 	}
 
 	scrollbar := m.renderScrollbarHeight(origVpH)
 	if scrollbar == "" {
 		chatView = padToHeight(chatView, origVpH)
-		return m.joinChatSidebar(chatView, origVpH)
+		return chatView
 	}
 
 	targetW := m.viewport.Width()
@@ -204,34 +201,6 @@ func (m chatModel) renderChatPane() string {
 		if i < len(chatLines)-1 {
 			out.WriteByte('\n')
 		}
-	}
-	return m.joinChatSidebar(out.String(), origVpH)
-}
-
-func (m chatModel) joinChatSidebar(chatView string, height int) string {
-	sidebarW := m.chatSidebarWidth(m.width)
-	if sidebarW == 0 {
-		return chatView
-	}
-	mainW := m.viewport.Width()
-	if mainW <= 0 {
-		mainW = m.chatMainWidth(m.width)
-	}
-	lines := strings.Split(padToHeight(chatView, height), "\n")
-	sidebar := strings.Split(m.renderSessionSidebar(sidebarW, height), "\n")
-	divider := scrollbarTrackStyle().Render("│")
-	var out strings.Builder
-	for i := 0; i < height; i++ {
-		if i > 0 {
-			out.WriteByte('\n')
-		}
-		line := lines[i]
-		if w := visibleWidth(line); w < mainW {
-			line += strings.Repeat(" ", mainW-w)
-		}
-		out.WriteString(line)
-		out.WriteString(divider)
-		out.WriteString(sidebar[i])
 	}
 	return out.String()
 }

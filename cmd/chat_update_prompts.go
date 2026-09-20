@@ -161,6 +161,14 @@ func (m chatModel) handlePermissionAsk(msg permissionAskMsg) (tea.Model, tea.Cmd
 }
 
 func (m chatModel) activatePermissionRequest(req safety.PermissionRequest) (tea.Model, tea.Cmd) {
+	// Autonomous mode is policy-driven, not interactive. The safety engine has
+	// already classified this request as requiring a permission callback; at
+	// this tier the user explicitly chose for rho to resolve it without a
+	// human-in-the-loop card.
+	if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().RuntimeState().Autonomy == safety.AutonomyYOLO {
+		resolvePermissionResponse(&req, true)
+		return m.activateNextPermissionRequest()
+	}
 	m.permReq = &req
 	m.permReqSeq++
 	m.promptGeneration++

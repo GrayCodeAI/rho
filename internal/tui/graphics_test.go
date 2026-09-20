@@ -127,3 +127,14 @@ func TestEmitPNGOversizeFallsBack(t *testing.T) {
 		t.Errorf("EmitPNG wrote bytes for oversize image, want 0")
 	}
 }
+
+func TestClearGraphicsEmitsKittyDeleteAll(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "kitty")
+	var buf bytes.Buffer
+	if err := ClearGraphics(&buf); err != nil {
+		t.Fatalf("ClearGraphics returned error: %v", err)
+	}
+	if got, want := buf.String(), "\x1b_Ga=d,d=A\x1b\\"; got != want {
+		t.Fatalf("ClearGraphics output = %q, want %q", got, want)
+	}
+}

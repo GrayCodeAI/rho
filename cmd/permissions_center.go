@@ -160,23 +160,44 @@ func markOverridden(profile *safety.AutonomyProfile, flag string) string {
 }
 
 func autonomyCommandHelp() string {
-	return "Autonomy Center\n" +
-		"  /autonomy                          Show current tier, spec stage, and rules\n" +
-		"  /autonomy tier <scout|builder|operator|autonomous>\n" +
-		"  /autonomy bypass <on|off>          Break-glass bypass (requires --reason; optional --scope/--for)\n" +
-		"  /autonomy dry-run <on|off>         Deny every tool call unconditionally (kill switch)\n" +
-		"  /autonomy allow <rule>           Add a session-only allow rule\n" +
-		"  /autonomy deny <rule>            Add a session-only deny rule\n" +
-		"  /autonomy rules                    Show current allow/deny rules\n" +
-		"  /autonomy rules clear              Clear current session rules\n" +
-		"  /autonomy profile [flag=<on|off>]  Show or override per-flag autonomy (auto_execute_bash, auto_network)\n" +
-		"  /autonomy audit                    Show recent permission decisions with reasons\n" +
-		"  /autonomy metrics                  Show permission decision counters\n" +
-		"  /autonomy grants cleanup           Rebuild active rules from settings (clear learned)\n" +
-		"  /autonomy reset                    Reset tier, dry-run, bypass, and session rules\n" +
-		"  /autonomy save [global]           Persist settings (session rules are not saved)\n" +
+	return "Permission Center\n" +
+		"  /permission             Show active permissions and folder trust\n" +
+		"  /permission mode        Choose permission mode\n" +
+		"  /permission trust       Accept or reject this folder\n" +
+		"  /permission reset       Restore safe defaults\n" +
 		"\n" +
-		"For the spec-driven workflow (gates Write/Edit/Bash until approved), see /spec."
+		"Autonomy controls: /autonomy"
+}
+
+// handlePolicyCommand is the focused permission entry point. The
+// existing autonomy and trust handlers remain below it as compatibility
+// implementations, but all policy changes still flow through their shared
+// PermissionService and project-trust authority.
+func (m *chatModel) handlePolicyCommand(args []string) (chatModel, tea.Cmd) {
+	if len(args) == 0 {
+		if m == nil {
+			return chatModel{}, nil
+		}
+		m.messages = append(m.messages, displayMsg{role: "system", content: autonomyCenterSummary(m) + "\n\n" + engine.ProjectTrust("").Detail()})
+		return *m, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "trust":
+		trust := &trustSubcommand{}
+		model, cmd := trust.Handle(m, args[1:], "")
+		if next, ok := model.(*chatModel); ok && next != nil {
+			return *next, cmd
+		}
+		return *m, cmd
+	case "mode", "autonomy":
+		if len(args) == 1 {
+			return m.handleAutonomyCommand([]string{"/autonomy"})
+		}
+		return m.handleAutonomyCommand([]string{"/autonomy", "tier", args[1]})
+	default:
+		return m.handleAutonomyCommand(append([]string{"/autonomy"}, args...))
+	}
 }
 
 func autonomyCenterSummary(m *chatModel) string {

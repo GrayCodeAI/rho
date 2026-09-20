@@ -46,6 +46,15 @@ func TestRenderStatusBarSecondaryRight_OmitsDuplicatedAutonomy(t *testing.T) {
 	}
 }
 
+func TestRenderPermissionStatus_ShowsActiveTierAndTrust(t *testing.T) {
+	sess := engine.NewSession("", "test-model", "system", nil)
+	sess.PermSvc().SetAutonomy(safety.AutonomyFull)
+	got := renderPermissionStatus(&chatModel{session: sess})
+	if !strings.Contains(got, "Permission") || !strings.Contains(got, "Operator") {
+		t.Fatalf("permission status = %q, want active tier", got)
+	}
+}
+
 func TestRenderStatusBarSecondaryRight_OmitsDuplicatedCost(t *testing.T) {
 	sess := engine.NewSession("", "test-model", "system", nil)
 	sess.CostValue().TotalCostUSD = 1.25

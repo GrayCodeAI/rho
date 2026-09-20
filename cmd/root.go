@@ -206,12 +206,15 @@ Run rho and use /config to set up your first provider.`, registeredProviderCount
 			return err
 		}
 
-		// Folder trust check — block starting CLI in an untrusted directory
-		if tr := engine.ProjectTrust(""); tr.Blocked {
-			return fmt.Errorf("cannot start CLI: folder not trusted (%s)\nProject-scoped hooks, MCP servers, and custom specialists are blocked.\nRun 'rho trust add' to trust this folder before starting rho", tr.Path)
+		// Launch the TUI even when the folder is untrusted. Project-scoped hooks,
+		// MCP servers, and specialists remain blocked by their own trust gates;
+		// refusing to open the chat makes the security control look like a broken
+		// CLI instead of a clearly visible restricted mode.
+		if tr := engine.ProjectTrust(""); tr.Blocked && isInteractiveTerminal() {
+			promptForInteractiveFolderTrust(os.Stdin, os.Stderr, tr, func() error {
+				return engine.TrustProject("", "user approved at interactive startup")
+			})
 		}
-
-		// Launch TUI — use /config to set API keys; flux supplies providers and models
 		return runChat()
 	},
 }

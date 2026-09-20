@@ -820,6 +820,17 @@ func init() {
 		},
 	})
 
+	// /permission — focused control plane for access decisions and folder trust.
+	subcommandRegistry.Register(&delegatingCommand{
+		name:        "permission",
+		description: "show or change permissions and folder trust",
+		usage:       "/permission [status|trust|reset]",
+		handler: func(m *chatModel, args []string, text string) (tea.Model, tea.Cmd) {
+			next, cmd := m.handlePolicyCommand(args)
+			return &next, cmd
+		},
+	})
+
 	// /add <file...> — add file content to context
 	subcommandRegistry.Register(&delegatingCommand{
 		name:        "add",

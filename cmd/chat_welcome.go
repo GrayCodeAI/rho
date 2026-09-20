@@ -125,12 +125,10 @@ func buildWelcomeMessageWithSnapshotAndMascot(sess *engine.Session, sessionID st
 
 	art := rhoLogoArtLines
 	useMascot = useMascot && !tight
-	if useMascot {
-		// The inline mascot is emitted by the TUI init command. Keep one empty
-		// art row in the layout so the welcome content retains its spacing;
-		// unsupported terminals continue through the ASCII path below.
-		art = []string{""}
-	}
+	// Keep the text wordmark even when a graphical mascot is requested. The
+	// mascot is a best-effort terminal escape sequence; hiding the canonical
+	// fallback makes the entire welcome screen disappear in terminals that
+	// advertise image support but do not render the sequence.
 	var eyeGlyph string
 	switch eyeFrame {
 	case 1, 3:
@@ -201,6 +199,15 @@ func buildWelcomeMessageWithSnapshotAndMascot(sess *engine.Session, sessionID st
 	indicators := welcomeIndicatorRow(skillsCount, snapshot.agentsOK, mcpCount, greenC, sepC, rst, markPresent, markNone)
 	b.WriteByte('\n')
 	b.WriteString(center(visibleWidth(indicators), indicators) + "\n")
+
+	// Give a new session a useful starting point. This is deliberately two
+	// short lines rather than a panel: the input remains the primary action,
+	// while the empty state explains what to type without consuming the chat.
+	b.WriteString("\n")
+	guidance := dimC + "Inspect, change, or test this codebase with rho." + rst
+	examples := dimC + `Try: "explain this repo"  ·  "run the tests"  ·  "/help"` + rst
+	b.WriteString(center(visibleWidth(guidance), guidance) + "\n")
+	b.WriteString(center(visibleWidth(examples), examples) + "\n")
 
 	if resume := actLine(saved, sessionID); resume != "" {
 		b.WriteString("\n")

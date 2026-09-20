@@ -318,3 +318,27 @@ func TestHandleAutonomyCommand_RuleChangePreservesSessionDecisions(t *testing.T)
 		t.Fatal("explicit deny rule was not applied to the live session")
 	}
 }
+
+func TestHandlePolicyCommand_CentralizesAutonomyAndTrust(t *testing.T) {
+	sess := engine.NewSession("", "test-model", "you are helpful", nil)
+	model := &chatModel{session: sess}
+
+	updated, _ := model.handlePolicyCommand([]string{"tier", "autonomous"})
+	if got := updated.session.PermSvc().RuntimeState().Autonomy; got != safety.AutonomyYOLO {
+		t.Fatalf("policy tier = %v, want Autonomous", got)
+	}
+
+	updated, _ = updated.handlePolicyCommand(nil)
+	last := updated.messages[len(updated.messages)-1]
+	if !strings.Contains(last.content, "Autonomy Center") || !strings.Contains(last.content, "Project") {
+		t.Fatalf("policy status should include autonomy and trust state, got %q", last.content)
+	}
+}
+
+func TestHandlePolicyCommand_ModeIsTheSimpleTierEntryPoint(t *testing.T) {
+	m := &chatModel{session: engine.NewSession("", "test-model", "you are helpful", nil)}
+	next, _ := m.handlePolicyCommand([]string{"mode", "operator"})
+	if got := next.session.PermSvc().RuntimeState().Autonomy; got != safety.AutonomyFull {
+		t.Fatalf("policy mode operator = %v, want Operator", got)
+	}
+}

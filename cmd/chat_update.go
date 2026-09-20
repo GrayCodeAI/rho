@@ -646,10 +646,6 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if isSupervisedPending(current) && !m.supervisedPending {
 						m.supervisedPending = true
 						m.supervisedPendingAt = time.Now()
-						m.messages = append(m.messages, displayMsg{
-							role:    "warning",
-							content: "Ctrl+L again within 1.5s to confirm Always Ask (max friction), or wait to skip.",
-						})
 						m.viewDirty = true
 						m.updateViewportContent()
 						return m, nil
@@ -667,10 +663,6 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.session.PermSvc().SetAutonomy(nextTier)
 					m.settings.AutonomyExplicit = true
 					m.invalidateConnStatus()
-					m.messages = append(m.messages, displayMsg{
-						role:    "warning",
-						content: formatAutonomyTierMessage(nextTier) + "  ·  Ctrl+L to change",
-					})
 					m.viewDirty = true
 					m.updateViewportContent()
 					return m, nil
