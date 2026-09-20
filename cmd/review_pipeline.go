@@ -8,9 +8,11 @@ import (
 
 // Compatibility aliases keep existing command and workflow code stable while
 // the review capability is owned by its feature package.
-type ReviewChatFn = reviewfeature.ChatFunc
-type ReviewConcern = reviewfeature.Concern
-type ReviewFinding = reviewfeature.Finding
+type (
+	ReviewChatFn  = reviewfeature.ChatFunc
+	ReviewConcern = reviewfeature.Concern
+	ReviewFinding = reviewfeature.Finding
+)
 
 func DefaultConcerns() []ReviewConcern {
 	return reviewfeature.DefaultConcerns()

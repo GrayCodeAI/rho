@@ -48,8 +48,10 @@ func (PowerShellTool) Parameters() map[string]interface{} {
 // powershellSchema is the single source of truth for PowerShell's input schema.
 var powershellSchema = PowerShellTool{}.Schema()
 
-var powershellDestructiveRe = regexp.MustCompile(`(?i)(?:^|[\s;&|])(?:remove-item|ri|del|erase|rd|rmdir|clear-content|clear-item|format-volume|clear-disk|stop-computer|restart-computer)\b`)
-var powershellSuspiciousRe = regexp.MustCompile(`(?i)(?:^|[;&|])\s*(?:iex|invoke-expression)\b|\b(?:invoke-webrequest|iwr|invoke-restmethod|irm|start-bitstransfer|set-executionpolicy)\b|\b(?:start-process|saps)\b[^\n;&|]*-verb\s+runas\b`)
+var (
+	powershellDestructiveRe = regexp.MustCompile(`(?i)(?:^|[\s;&|])(?:remove-item|ri|del|erase|rd|rmdir|clear-content|clear-item|format-volume|clear-disk|stop-computer|restart-computer)\b`)
+	powershellSuspiciousRe  = regexp.MustCompile(`(?i)(?:^|[;&|])\s*(?:iex|invoke-expression)\b|\b(?:invoke-webrequest|iwr|invoke-restmethod|irm|start-bitstransfer|set-executionpolicy)\b|\b(?:start-process|saps)\b[^\n;&|]*-verb\s+runas\b`)
+)
 
 // IsPowerShellDestructive reports PowerShell cmdlets that delete data, alter
 // storage, or stop/restart the host. These are hard-denied independently of

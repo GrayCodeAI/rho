@@ -4,8 +4,10 @@ import executionfeature "github.com/GrayCodeAI/rho/internal/features/execution"
 
 // Compatibility aliases keep callers stable while execution owns the
 // test-first workflow implementation.
-type TestFirstConfig = executionfeature.TestFirstConfig
-type TestFirstResult = executionfeature.TestFirstResult
+type (
+	TestFirstConfig = executionfeature.TestFirstConfig
+	TestFirstResult = executionfeature.TestFirstResult
+)
 
 func DefaultTestFirstConfig() TestFirstConfig {
 	return executionfeature.DefaultTestFirstConfig()
