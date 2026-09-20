@@ -8,6 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"golang.org/x/term"
+
+	chatfeature "github.com/GrayCodeAI/rho/internal/features/chat"
 )
 
 // selectionResumedMsg is delivered to the chat model after the user finishes a
@@ -99,50 +101,13 @@ func makeStdinRaw() (func(), error) {
 // plainTranscript renders chat messages as plain text for clipboard export and
 // native terminal selection. ANSI styling is omitted so copy/paste stays clean.
 func plainTranscript(messages []displayMsg, partial string) string {
-	var b strings.Builder
+	projected := make([]chatfeature.Message, 0, len(messages))
 	for _, msg := range messages {
-		line, ok := plainTranscriptLine(msg)
-		if !ok {
-			continue
-		}
-		b.WriteString(line)
-		b.WriteString("\n\n")
+		projected = append(projected, chatfeature.Message{Role: msg.role, Content: msg.content})
 	}
-	if partial != "" {
-		b.WriteString("rho: ")
-		b.WriteString(partial)
-		b.WriteString("\n\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
+	return chatfeature.PlainTranscript(projected, partial)
 }
 
 func plainTranscriptLine(msg displayMsg) (string, bool) {
-	content := strings.TrimSpace(msg.content)
-	if content == "" {
-		return "", false
-	}
-	switch msg.role {
-	case "welcome", "usage", "setup_complete":
-		return "", false
-	case "user":
-		return "You: " + content, true
-	case "assistant":
-		return "rho: " + content, true
-	case "error":
-		return "Error: " + content, true
-	case "system":
-		return content, true
-	case "thinking":
-		return "thinking: " + content, true
-	case "tool_use":
-		return "tool: " + content, true
-	case "tool_result":
-		return content, true
-	case "permission":
-		return "permission: " + content, true
-	case "question":
-		return content, true
-	default:
-		return content, true
-	}
+	return chatfeature.PlainTranscriptLine(chatfeature.Message{Role: msg.role, Content: msg.content})
 }

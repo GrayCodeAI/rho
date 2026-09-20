@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/GrayCodeAI/rho/internal/hooks"
@@ -33,17 +34,47 @@ func (r *Runtime) LoadAll() error {
 	if err != nil {
 		return err
 	}
-	r.plugins = plugins
-	for _, p := range plugins {
-		for _, cmd := range p.Commands {
-			r.commands[cmd.Name] = cmd
-		}
-		for _, h := range p.Hooks {
-			r.hooks[h.Event] = append(r.hooks[h.Event], h)
-		}
+	if err := r.rebuildIndexes(plugins); err != nil {
+		return err
 	}
+	r.plugins = plugins
 	// Load smart skills from standard directories
 	r.SmartSkills = LoadSmartSkills(DefaultSkillDirs())
+	return nil
+}
+
+func (r *Runtime) rebuildIndexes(plugins []*Manifest) error {
+	// Rebuild derived indexes from the authoritative manifest set. Without
+	// clearing these maps, a reload leaves commands and hooks from removed
+	// plugins executable for the rest of the process lifetime.
+	commands := make(map[string]CommandDef)
+	hooks := make(map[string][]HookDef)
+	for _, p := range plugins {
+		for _, cmd := range p.Commands {
+			if err := validateRuntimeCommandName(cmd.Name); err != nil {
+				return fmt.Errorf("plugin %q: %w", p.Name, err)
+			}
+			if owner, exists := commands[cmd.Name]; exists {
+				return fmt.Errorf("plugin command %q is declared more than once (already registered as %q)", cmd.Name, owner.Name)
+			}
+			commands[cmd.Name] = cmd
+		}
+		for _, h := range p.Hooks {
+			hooks[h.Event] = append(hooks[h.Event], h)
+		}
+	}
+	r.commands = commands
+	r.hooks = hooks
+	return nil
+}
+
+func validateRuntimeCommandName(name string) error {
+	if name == "" {
+		return fmt.Errorf("command name is required")
+	}
+	if strings.TrimSpace(name) != name || strings.HasPrefix(name, "/") || strings.ContainsAny(name, " \t\r\n") {
+		return fmt.Errorf("invalid command name %q", name)
+	}
 	return nil
 }
 
@@ -114,6 +145,7 @@ func (r *Runtime) CommandList() []CommandDef {
 	for _, cmd := range r.commands {
 		out = append(out, cmd)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 

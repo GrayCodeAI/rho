@@ -138,22 +138,6 @@ go run ./cmd/rho securitylog verify
 
 ## 5. Prometheus Scraping
 
-### Docker
-
-```yaml
-services:
-  rho:
-    image: ghcr.io/graycodeai/rho-daemon:latest
-    ports:
-      - "4590:4590"
-    environment:
-      - RHO_DAEMON_API_KEY=secret
-    labels:
-      - "prometheus.io/scrape=true"
-      - "prometheus.io/port=4590"
-      - "prometheus.io/path=/v1/metrics"
-```
-
 ### Kubernetes
 
 ```yaml

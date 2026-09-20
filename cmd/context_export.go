@@ -62,7 +62,7 @@ func ExportContext(dir string, focus string) (string, error) {
 	}
 
 	// AGENTS.md / project instructions
-	for _, instrFile := range []string{"AGENTS.md", "AGENTS.md", "CLAUDE.md", ".rho.md"} {
+	for _, instrFile := range []string{"AGENTS.md", ".rho.md"} {
 		data, err := os.ReadFile(filepath.Join(dir, instrFile)) // #nosec G304 -- instrFile is one of a fixed set of well-known project instruction filenames
 		if err == nil && len(data) > 0 {
 			b.WriteString(fmt.Sprintf("## Project Instructions (%s)\n\n%s\n\n", instrFile, strings.TrimSpace(string(data))))

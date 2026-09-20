@@ -3,12 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/GrayCodeAI/rho/internal/engine"
+	chatfeature "github.com/GrayCodeAI/rho/internal/features/chat"
 )
 
 // Streaming and prompt command functions extracted from chat.go
@@ -16,9 +15,7 @@ import (
 func (m *chatModel) startPromptCommand(display, prompt string) (tea.Model, tea.Cmd) {
 	m.messages = append(m.messages, displayMsg{role: "user", content: display})
 	m.session.AddUser(prompt)
-	m.turnSawThinking = false
-	m.turnHadAssistantOutput = false
-	m.turnHadToolActivity = false
+	m.turn.Reset()
 	m.waiting = true
 	m.viewDirty = true
 	m.partial.Reset()
@@ -30,10 +27,7 @@ func (m *chatModel) startPromptCommand(display, prompt string) (tea.Model, tea.C
 	return m, nil
 }
 
-func dispatchStreamEventWithFlush(ref *progRef, ev engine.StreamEvent, flush func()) bool {
-	if ev.Type != "content" && flush != nil {
-		flush()
-	}
+func dispatchStreamEvent(ref *progRef, ev engine.StreamEvent) bool {
 	switch ev.Type {
 	case "content":
 		ref.Send(streamChunkMsg(ev.Content))
@@ -69,84 +63,8 @@ func dispatchStreamEventWithFlush(ref *progRef, ev engine.StreamEvent, flush fun
 	return false
 }
 
-const streamChunkCoalesceInterval = 16 * time.Millisecond
-
-// pumpStreamEvents drains the engine channel into Bubble Tea messages.
-func pumpStreamEvents(ref *progRef, ch <-chan engine.StreamEvent) {
-	var buf strings.Builder
-	firstContent := true
-	flush := func() {
-		if buf.Len() == 0 {
-			return
-		}
-		ref.Send(streamChunkMsg(buf.String()))
-		buf.Reset()
-	}
-	defer flush()
-
-	var timer *time.Timer
-	var timerC <-chan time.Time
-	stopTimer := func() {
-		if timer == nil {
-			return
-		}
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer = nil
-		timerC = nil
-	}
-	startTimer := func() {
-		if timer != nil {
-			return
-		}
-		timer = time.NewTimer(streamChunkCoalesceInterval)
-		timerC = timer.C
-	}
-	for {
-		select {
-		case <-timerC:
-			flush()
-			timer = nil
-			timerC = nil
-		case ev, ok := <-ch:
-			if !ok {
-				stopTimer()
-				flush()
-				ref.Send(streamDoneMsg{})
-				return
-			}
-			if ev.Type == "content" {
-				if firstContent {
-					firstContent = false
-					ref.Send(streamChunkMsg(ev.Content))
-					continue
-				}
-				buf.WriteString(ev.Content)
-				if shouldFlushStreamChunkBuffer(buf.String()) {
-					stopTimer()
-					flush()
-				} else {
-					startTimer()
-				}
-				continue
-			}
-			stopTimer()
-			if dispatchStreamEventWithFlush(ref, ev, flush) {
-				return
-			}
-		}
-	}
-}
-
 func shouldFlushStreamChunkBuffer(s string) bool {
-	if len(s) >= 512 {
-		return true
-	}
-	return strings.ContainsAny(s, "\n.!?;:")
+	return chatfeature.ShouldFlushStreamChunkBuffer(s)
 }
 
 func (m *chatModel) startStream() {
@@ -168,11 +86,11 @@ func (m *chatModel) startStream() {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	go func() {
-		ch, err := sess.Stream(ctx)
+		err := chatfeature.RunStream(ctx, sess, func(event engine.StreamEvent) {
+			dispatchStreamEvent(ref, event)
+		})
 		if err != nil {
 			ref.Send(streamErrMsg{err: err})
-			return
 		}
-		pumpStreamEvents(ref, ch)
 	}()
 }

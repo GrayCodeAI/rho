@@ -2,8 +2,6 @@ package safety
 
 import (
 	"strings"
-
-	"github.com/GrayCodeAI/rho/internal/tool"
 )
 
 // AutonomyLevel controls how much the agent can do without asking the user.
@@ -21,89 +19,6 @@ const (
 	// AutonomyYOLO never asks for permission.
 	AutonomyYOLO AutonomyLevel = 4
 )
-
-// AutonomyConfig holds the derived permission flags for an autonomy level.
-type AutonomyConfig struct {
-	Level           AutonomyLevel
-	AutoContinue    bool
-	AutoApplyEdits  bool
-	AutoExecuteBash bool
-	AutoCommit      bool
-}
-
-// writeTools are tools that create or modify files.
-var writeTools = map[string]bool{
-	"Write":      true,
-	"Edit":       true,
-	"file_write": true,
-	"file_edit":  true,
-}
-
-// PresetConfig returns the AutonomyConfig for a given level.
-func PresetConfig(level AutonomyLevel) AutonomyConfig {
-	switch level {
-	case AutonomySupervised:
-		return AutonomyConfig{Level: level}
-	case AutonomyBasic:
-		return AutonomyConfig{
-			Level:        level,
-			AutoContinue: true,
-		}
-	case AutonomySemi:
-		return AutonomyConfig{
-			Level:          level,
-			AutoContinue:   true,
-			AutoApplyEdits: true,
-		}
-	case AutonomyFull:
-		return AutonomyConfig{
-			Level:           level,
-			AutoContinue:    true,
-			AutoApplyEdits:  true,
-			AutoExecuteBash: true,
-			AutoCommit:      true,
-		}
-	case AutonomyYOLO:
-		return AutonomyConfig{
-			Level:           level,
-			AutoContinue:    true,
-			AutoApplyEdits:  true,
-			AutoExecuteBash: true,
-			AutoCommit:      true,
-		}
-	default:
-		return AutonomyConfig{Level: AutonomySupervised}
-	}
-}
-
-// NeedsPermission returns true when the tool call should prompt the user.
-// isSafe indicates whether the specific invocation has been classified as safe
-// (e.g. a non-destructive bash command).
-func (c AutonomyConfig) NeedsPermission(toolName string, isSafe bool) bool {
-	switch c.Level {
-	case AutonomyYOLO:
-		return false
-	case AutonomyFull:
-		// Auto-allow everything except destructive commands.
-		// A non-safe bash command at Full level still needs permission.
-		if toolName == "Bash" || toolName == "bash" {
-			return !isSafe
-		}
-		return false
-	case AutonomySemi:
-		if tool.IsReadOnly(toolName) || writeTools[toolName] {
-			return false
-		}
-		return true
-	case AutonomyBasic:
-		if tool.IsReadOnly(toolName) {
-			return false
-		}
-		return true
-	default: // Supervised
-		return true
-	}
-}
 
 // ParseAutonomyLevel converts a string name or number to an AutonomyLevel.
 // Product aliases (Grok/Claude-style):

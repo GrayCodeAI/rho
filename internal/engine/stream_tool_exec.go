@@ -192,7 +192,7 @@ func isNetworkReadOnlyTool(name string) bool {
 }
 
 // RunUserShellCommand runs a user-initiated shell command through the same
-// permission, approval, sandbox/container, timeout, retry, truncation, hook,
+// permission, approval, timeout, retry, truncation, hook,
 // and post-processing path used by model-initiated Bash tool calls.
 func (s *Session) RunUserShellCommand(ctx context.Context, command string, timeoutSeconds int) (string, bool) {
 	if ctx == nil {
@@ -211,7 +211,7 @@ func (s *Session) RunUserShellCommand(ctx context.Context, command string, timeo
 	return result.output, result.isErr
 }
 
-// executeSingleTool runs one tool call with permission checks, sandboxing, and all post-processing.
+// executeSingleTool runs one tool call with permission checks and all post-processing.
 func (s *Session) executeSingleTool(ctx context.Context, tc types.ToolCall, ch chan<- StreamEvent, turnCount int, intentText string) toolExecResult {
 	return s.executeSingleToolWithTool(ctx, tc, nil, ch, turnCount, intentText)
 }

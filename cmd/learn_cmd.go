@@ -18,6 +18,7 @@ var (
 	learnCategory string
 	learnLimit    int
 	learnAll      bool
+	learnClearYes bool
 )
 
 // learnCmd manages the cross-session lesson store.
@@ -73,9 +74,13 @@ var learnClearCmd = &cobra.Command{
 			cmd.Println(auditTint("no lessons to clear", textMuted))
 			return nil
 		}
-		ok, err := confirmDestructive(fmt.Sprintf("Remove all %d lesson(s)?", n))
-		if err != nil {
-			return err
+		ok := learnClearYes
+		if !ok {
+			var err error
+			ok, err = confirmDestructive(fmt.Sprintf("Remove all %d lesson(s)?", n))
+			if err != nil {
+				return err
+			}
 		}
 		if !ok {
 			cmd.Println(auditTint("Cancelled.", textMuted))
@@ -94,6 +99,7 @@ func init() {
 	learnAddCmd.Flags().StringVar(&learnCategory, "category", "manual", "code, test, design, communication, manual")
 	learnCmd.Flags().IntVar(&learnLimit, "limit", 20, "max lessons to print (0 = all)")
 	learnCmd.Flags().BoolVar(&learnAll, "all", false, "include all fields (also shows the why)")
+	learnClearCmd.Flags().BoolVar(&learnClearYes, "yes", false, "confirm clearing all lessons")
 	learnCmd.AddCommand(learnAddCmd)
 	learnCmd.AddCommand(learnPromptCmd)
 	learnCmd.AddCommand(learnClearCmd)

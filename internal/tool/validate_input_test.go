@@ -111,7 +111,7 @@ func TestRegistryExecuteValidatesInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected Registry.Execute to reject input missing required field")
 	}
-	// Valid input reaches the tool (Bash runs echo; with no sandbox mode it executes directly).
+	// Valid input reaches the tool (Bash runs echo directly after policy checks).
 	out, err := reg.Execute(context.Background(), "Bash", json.RawMessage(`{"command":"echo registry-ok"}`))
 	if err != nil {
 		t.Fatalf("expected valid input to execute, got: %v", err)

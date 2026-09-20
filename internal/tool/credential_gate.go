@@ -4,14 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
-	"strings"
 	"time"
 )
 
 // CredentialGateFn is the host-side callback that prompts the user to approve
 // or deny credential access. It blocks until the user responds or the context
-// expires. The containerID is provided so the caller can flip the symlink.
+// expires.
 type CredentialGateFn func(req CredentialRequest) CredentialResponse
 
 // CredentialRequest describes a credential the AI wants to access.
@@ -20,7 +18,6 @@ type CredentialRequest struct {
 	Reason      string `json:"reason"`      // why the AI needs it
 	Name        string `json:"name"`        // human-readable name
 	Description string `json:"description"` // what it's for
-	ContainerID string `json:"container_id,omitempty"`
 }
 
 // CredentialResponse is the user's decision.
@@ -39,7 +36,7 @@ func (RequestCredentialTool) Aliases() []string { return []string{"request_crede
 func (RequestCredentialTool) Description() string {
 	return "Request access to a host credential (e.g. kube config, AWS creds, git config). " +
 		"The user will be prompted to approve or deny. Only approved credentials become " +
-		"available inside the sandbox. Use this when a command fails due to missing credentials."
+		"available to approved host operations. Use this when a command fails due to missing credentials."
 }
 
 // Schema returns the typed input schema. Parameters() delegates to it so the
@@ -102,25 +99,7 @@ func (t RequestCredentialTool) Execute(ctx context.Context, input json.RawMessag
 		return "", fmt.Errorf("credential %q denied by user", p.Credential)
 	}
 
-	return fmt.Sprintf("Access to %q granted. The credential is now available inside the sandbox.", p.Credential), nil
-}
-
-// FlipCredentialSymlink flips the symlink for an approved credential inside the
-// container. Called by the host after the user approves.
-func FlipCredentialSymlink(containerID, credentialID, stagingPath, containerPath string) error {
-	if containerID == "" {
-		return fmt.Errorf("no container ID")
-	}
-	// Remove existing symlink and create a new one pointing to staging.
-	containerDir := containerPath[:strings.LastIndex(containerPath, "/")]
-	cmdArgs := fmt.Sprintf("rm -f %q && mkdir -p %q && ln -sfn %q %q",
-		containerPath, containerDir, stagingPath, containerPath)
-	cmd := exec.Command("docker", "exec", containerID, "sh", "-c", cmdArgs) // #nosec G204 -- cmdArgs is safely quoted with %q
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to flip symlink for %q: %s", credentialID, strings.TrimSpace(string(out)))
-	}
-	return nil
+	return fmt.Sprintf("Access to %q granted for approved host operations.", p.Credential), nil
 }
 
 // RequestCredentialTimeout is how long the AI waits for the user to respond.

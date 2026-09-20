@@ -126,9 +126,12 @@ func renderDisplayMessage(msg displayMsg, i int, messages []displayMsg, viewWidt
 		b.WriteString(renderSetupCompleteMessage(msg.content))
 	case "permission":
 		b.WriteString(renderPermissionBox(msg.content, viewWidth, msg.timeoutAt))
+	case "approval":
+		b.WriteString(renderApprovalBox(msg.content, viewWidth, msg.timeoutAt))
+	case "credential":
+		b.WriteString(renderCredentialBox(msg.content, viewWidth, msg.timeoutAt))
 	case "question":
-		qWrapped := wrapText(msg.content, viewWidth-2, 2)
-		b.WriteString(toolStyle.Render(qWrapped))
+		b.WriteString(renderQuestionBox(msg.content, viewWidth, msg.timeoutAt))
 	case "usage":
 		b.WriteString(dimStyle.Render("  " + msg.content))
 	case "warning":

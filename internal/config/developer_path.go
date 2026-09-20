@@ -35,7 +35,7 @@ type PathCheck struct {
 	Blocking bool            `json:"blocking"`
 }
 
-// DeveloperPathReport summarizes developer readiness (setup, security, sandbox, ecosystem).
+// DeveloperPathReport summarizes developer readiness (setup, security, ecosystem).
 type DeveloperPathReport struct {
 	Checks      []PathCheck `json:"checks"`
 	ChatReady   bool        `json:"chat_ready"`

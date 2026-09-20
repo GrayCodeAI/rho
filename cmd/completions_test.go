@@ -29,6 +29,15 @@ func TestNewCompletionGenerator(t *testing.T) {
 	if len(g.Providers) == 0 {
 		t.Error("Providers should not be empty")
 	}
+	generated := make(map[string]bool, len(g.SlashCommands))
+	for _, name := range g.SlashCommands {
+		generated[name] = true
+	}
+	for _, name := range slashCommands() {
+		if !generated[name] {
+			t.Fatalf("shell completion slash commands drifted from the dispatch catalog: missing %q", name)
+		}
+	}
 }
 
 func TestGenerateBashContainsFunctionDefinition(t *testing.T) {

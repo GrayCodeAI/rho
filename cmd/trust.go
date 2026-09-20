@@ -71,9 +71,13 @@ var trustRemoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		ok, err := confirmDestructive(fmt.Sprintf("Remove trust for %q?", path))
-		if err != nil {
-			return err
+		ok, _ := cmd.Flags().GetBool("yes")
+		if !ok {
+			var err error
+			ok, err = confirmDestructive(fmt.Sprintf("Remove trust for %q?", path))
+			if err != nil {
+				return err
+			}
 		}
 		if !ok {
 			cmd.Printf("%s\n", auditTint("Cancelled.", textMuted))
@@ -161,6 +165,7 @@ var trustCheckCmd = &cobra.Command{
 func init() {
 	trustAddCmd.Flags().String("reason", "", "Optional reason recorded in the trust store")
 	trustListCmd.Flags().BoolVar(&trustListJSON, "json", false, "output trusted directories as JSON")
+	trustRemoveCmd.Flags().Bool("yes", false, "confirm removing trust")
 	trustCmd.AddCommand(trustAddCmd)
 	trustCmd.AddCommand(trustRemoveCmd)
 	trustCmd.AddCommand(trustListCmd)

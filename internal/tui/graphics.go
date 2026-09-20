@@ -82,3 +82,14 @@ func EmitPNG(w io.Writer, png []byte, width, height int) (bool, error) {
 	}
 	return true, nil
 }
+
+// ClearGraphics removes graphics placed by rho from the terminal. Kitty
+// graphics can outlive Bubble Tea's alternate screen, so shutdown must clear
+// them before printing the plain-text farewell.
+func ClearGraphics(w io.Writer) error {
+	if !DetectCapability().Supported {
+		return nil
+	}
+	_, err := io.WriteString(w, "\x1b_Ga=d,d=A\x1b\\")
+	return err
+}

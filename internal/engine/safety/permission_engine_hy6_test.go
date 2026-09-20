@@ -3,6 +3,7 @@ package safety
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 // TestCheckTool_BypassDoesNotGrantDestructiveCommands verifies the H6 fix:
@@ -11,7 +12,9 @@ import (
 // IsDestructiveCommand block.
 func TestCheckTool_BypassDoesNotGrantDestructiveCommands(t *testing.T) {
 	pe := NewPermissionEngine()
-	pe.BypassKill.Enable()
+	if !pe.BypassKill.EnableScoped(nil, time.Time{}, "destructive-command test") {
+		t.Fatal("failed to enable test bypass")
+	}
 	pe.Autonomy = AutonomyYOLO
 
 	for _, cmd := range []string{"rm -rf /", "mkfs.ext4 /dev/sda", "dd if=/dev/zero of=/dev/sda"} {
@@ -29,7 +32,9 @@ func TestCheckTool_BypassDoesNotGrantDestructiveCommands(t *testing.T) {
 // still allows non-destructive commands (its intended use).
 func TestCheckTool_BypassAllowsNonDestructive(t *testing.T) {
 	pe := NewPermissionEngine()
-	pe.BypassKill.Enable()
+	if !pe.BypassKill.EnableScoped(nil, time.Time{}, "safe-command test") {
+		t.Fatal("failed to enable test bypass")
+	}
 
 	allowed, reason := pe.CheckTool(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "git status"}})
 	if !allowed {
@@ -46,5 +51,30 @@ func TestCheckTool_DestructiveBlockedByDefault(t *testing.T) {
 	allowed, _ := pe.CheckTool(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "rm -rf /"}})
 	if allowed {
 		t.Error("destructive command allowed at YOLO without bypass, want denied")
+	}
+}
+
+func TestCheckTool_DestructivePowerShellBlockedByDefault(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyYOLO
+
+	allowed, _ := pe.CheckTool(context.Background(), ToolCallInfo{
+		Name: "PowerShell",
+		Args: map[string]interface{}{"command": "rm -rf /"},
+	})
+	if allowed {
+		t.Error("destructive PowerShell command allowed at YOLO, want denied")
+	}
+}
+
+func TestCheckTool_DestructivePowerShellCmdletBlockedByDefault(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyYOLO
+	allowed, _ := pe.CheckTool(context.Background(), ToolCallInfo{
+		Name: "PowerShell",
+		Args: map[string]interface{}{"command": "Remove-Item -Recurse ./build"},
+	})
+	if allowed {
+		t.Fatal("destructive PowerShell cmdlet allowed at YOLO, want denied")
 	}
 }

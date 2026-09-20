@@ -299,55 +299,6 @@ func (l *Log) AppendPermissionPreset(category string, covered bool) {
 	l.Append(PermissionPreset, PermissionPresetFact{Category: category, Covered: covered})
 }
 
-// --- Sandbox mode ---
-
-// SandboxModeSource records the origin of a sandbox mode transition (DSH
-// `sandbox/mode` event source).
-type SandboxModeSource string
-
-const (
-	SandboxModeSourceUser       SandboxModeSource = "user"
-	SandboxModeSourceDelegation SandboxModeSource = "delegation"
-)
-
-// SandboxModeFact records a sandbox mode transition. Closed vocabulary: Mode
-// must be "strict", "workspace", or "off". Source must be "user" or "delegation".
-type SandboxModeFact struct {
-	Mode   string            `json:"mode,omitempty"`
-	Source SandboxModeSource `json:"source,omitempty"`
-}
-
-// Valid reports whether the fact conforms to the closed vocabulary invariant.
-func (f SandboxModeFact) Valid() bool {
-	switch f.Mode {
-	case "strict", "workspace", "off":
-	default:
-		return false
-	}
-	switch f.Source {
-	case "", SandboxModeSourceUser, SandboxModeSourceDelegation:
-		return true
-	default:
-		return false
-	}
-}
-
-// AppendSandboxMode records a sandbox mode transition with user source.
-func (l *Log) AppendSandboxMode(mode string) {
-	l.AppendSandboxModeWithSource(mode, SandboxModeSourceUser)
-}
-
-// AppendSandboxModeWithSource records a sandbox mode transition with explicit source.
-func (l *Log) AppendSandboxModeWithSource(mode string, source SandboxModeSource) {
-	if l == nil {
-		return
-	}
-	if source == "" {
-		source = SandboxModeSourceUser
-	}
-	l.Append(SandboxMode, SandboxModeFact{Mode: mode, Source: source})
-}
-
 // --- Schedule change ---
 
 // ScheduleChangeFact records a schedule configuration change.

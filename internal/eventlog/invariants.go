@@ -30,13 +30,6 @@ func Validate(events []Event) error {
 				}
 			}
 		}
-		if ev.Type == SandboxMode {
-			if f, ok := ev.Data.(SandboxModeFact); ok {
-				if !f.Valid() {
-					return fmt.Errorf("eventlog: invalid sandbox mode %q (source %q) at index %d", f.Mode, f.Source, i)
-				}
-			}
-		}
 		// DSH invariant: surface-eligible events must carry a surfaceOp marker;
 		// non-surface events must not. A log without markers is treated as
 		// all-append (backward compatible with version-1 logs written before
@@ -222,7 +215,7 @@ func ValidateRelations(events []Event) error {
 			}
 		default:
 			// All other types (context.injected, compaction/*, goal.change,
-			// sandbox.mode, etc.) are unconstrained — they may be appended
+			// other metadata events are unconstrained — they may be appended
 			// between model executions.
 		}
 	}

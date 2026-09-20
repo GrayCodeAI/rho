@@ -3,6 +3,7 @@ package safety
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/GrayCodeAI/rho/internal/governance"
 )
@@ -26,7 +27,9 @@ func TestGovernanceCeilingOverridesBypass(t *testing.T) {
 	pe.Governance.SetPolicy(govPolicy(
 		governance.Capability{Scope: "bash", Action: governance.ActionDeny},
 	))
-	pe.BypassKill.Enable()
+	if !pe.BypassKill.EnableScoped(nil, time.Time{}, "governance test") {
+		t.Fatal("failed to enable test bypass")
+	}
 
 	d := pe.CheckToolDecision(context.Background(), ToolCallInfo{
 		Name: "Bash",

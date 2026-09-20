@@ -45,6 +45,13 @@ func (k Kind) String() string {
 	return "unknown"
 }
 
+// CanonicalIdentity namespaces an exact identity by its rule kind. The kind
+// separator is part of the stable-key contract so identical text used by two
+// different rule kinds can never collide.
+func CanonicalIdentity(kind Kind, identity string) string {
+	return kind.String() + "\x00" + identity
+}
+
 // Decision is the action a rule prescribes.
 type Decision int
 

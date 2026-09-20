@@ -95,7 +95,6 @@ Reference:
   history     Search and browse command history
   manpage     Generate man page in roff format
   research    Autonomous research loop (Karpathy autoresearch pattern)
-  sandbox     View, apply, or discard pending diff sandbox changes
   update      Check for rho updates
   version     Print rho version
 
@@ -149,7 +148,6 @@ Flags:
       --timeout duration                   time budget for the operation (e.g., 2m, 5m, 1h)
       --tools stringArray                  available tools: "" disables all tools, "default" enables all, or names like "Bash,Edit,Read"
   -v, --version                            output the version number
-      --vibe                               vibe coding mode: auto-apply, auto-run, no confirmations
       --watch                              watch the working directory for file changes and re-run on changes
 
 Use "rho [command] --help" for more information about a command.

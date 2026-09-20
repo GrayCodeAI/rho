@@ -1,82 +1,30 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 
-	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	"github.com/GrayCodeAI/rho/internal/engine"
-	"github.com/GrayCodeAI/rho/internal/feature/taste"
+	"github.com/GrayCodeAI/rho/internal/features/taste"
+	workspacefeature "github.com/GrayCodeAI/rho/internal/features/workspace"
 	"github.com/GrayCodeAI/rho/internal/plugin"
 	"github.com/GrayCodeAI/rho/internal/system/staleness"
 )
 
 func gitOutput(args ...string) (string, error) {
-	// Output (not CombinedOutput): git writes warnings to stderr, which must
-	// not be folded into values like the branch name shown in the status bar.
-	out, err := exec.CommandContext(context.Background(), "git", args...).Output() // #nosec G204 -- fixed git executable
-	return strings.TrimSpace(string(out)), err
+	return workspacefeature.GitOutput(args...)
 }
 
 func branchSummary() string {
-	branch, err := gitOutput("rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil || branch == "" {
-		return "No git repository detected."
-	}
-	head, _ := gitOutput("rev-parse", "--short", "HEAD")
-	upstream, _ := gitOutput("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-	status, _ := gitOutput("status", "--short", "--branch")
-	var b strings.Builder
-	b.WriteString("Branch: " + branch)
-	if head != "" {
-		b.WriteString(" @ " + head)
-	}
-	if upstream != "" {
-		b.WriteString("\nUpstream: " + upstream)
-	}
-	if status != "" {
-		b.WriteString("\n\n" + status)
-	}
-	return b.String()
+	return workspacefeature.BranchSummary()
 }
 
 func filesSummary() string {
-	status, err := gitOutput("status", "--short")
-	if err != nil {
-		return "No git repository detected."
-	}
-	if strings.TrimSpace(status) == "" {
-		return "No modified files."
-	}
-	return "Modified files:\n" + status
+	return workspacefeature.FilesSummary()
 }
 
 func additionalDirContext(dir string) (string, string, error) {
-	dir = strings.TrimSpace(dir)
-	if dir == "" {
-		return "", "", fmt.Errorf("directory path is required")
-	}
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", "", err
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return "", "", err
-	}
-	if !info.IsDir() {
-		return "", "", fmt.Errorf("%s is not a directory", abs)
-	}
-	var b strings.Builder
-	b.WriteString("Additional directory: " + abs)
-	if md := rhoconfig.LoadAgentsMDFrom(abs); md != "" {
-		b.WriteString("\nAdditional directory instructions (" + abs + "):\n" + md)
-	}
-	return abs, b.String(), nil
+	return workspacefeature.AdditionalDirContext(dir)
 }
 
 func hasString(values []string, want string) bool {

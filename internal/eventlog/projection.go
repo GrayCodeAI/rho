@@ -313,7 +313,7 @@ type PermissionSelect struct {
 	CurrentValue string         `json:"current_value"` // effective: table key, or "custom"
 }
 
-// ProjectPermissions folds permission/preset, sandbox/mode, and approval/policy
+// ProjectPermissions folds permission/preset and approval/policy
 // events into a PermissionSelect view, matching DSH's permissions projection
 // which folds from those three event types over composition defaults.
 // Key absence means no permission service is composed — clients hide the control.
@@ -327,13 +327,6 @@ func ProjectPermissions(events []Event) PermissionSelect {
 			if f, ok := ev.Data.(PermissionPresetFact); ok && f.PresetName != "" {
 				// Track the preset name as the current value.
 				ps.CurrentValue = f.PresetName
-			}
-		case SandboxMode:
-			// DSH: sandbox/mode influences the effective permission surface.
-			if f, ok := ev.Data.(SandboxModeFact); ok {
-				if f.Mode != "" {
-					ps.CurrentValue = f.Mode
-				}
 			}
 		case ApprovalPolicy:
 			if f, ok := ev.Data.(ApprovalPolicyFact); ok {

@@ -18,7 +18,7 @@ func newIPv4TelegramServer(t *testing.T, h http.Handler) *httptest.Server {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) || strings.Contains(err.Error(), "operation not permitted") {
-			t.Skipf("sandbox does not allow local listeners: %v", err)
+			t.Skipf("restricted test environment does not allow local listeners: %v", err)
 		}
 		t.Fatalf("listen tcp4: %v", err)
 	}

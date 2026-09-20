@@ -72,31 +72,3 @@ func TestSourceRoots_Stale(t *testing.T) {
 		t.Errorf("expected 1 stale root, got %d", len(stale))
 	}
 }
-
-func TestToolInspector(t *testing.T) {
-	ti := NewToolInspector()
-
-	// Safe tool
-	r := ti.Inspect("Read", nil)
-	if !r.ShouldExecute() {
-		t.Error("Read should auto-execute")
-	}
-	if r.Confidence < 0.9 {
-		t.Errorf("expected high confidence for Read, got %f", r.Confidence)
-	}
-
-	// Dangerous bash
-	r = ti.Inspect("Bash", map[string]interface{}{"command": "rm -rf /"})
-	if r.ShouldExecute() {
-		t.Error("rm -rf should NOT auto-execute")
-	}
-	if r.Action != ActionRequireApproval {
-		t.Errorf("expected RequireApproval, got %d", r.Action)
-	}
-
-	// Safe bash
-	r = ti.Inspect("Bash", map[string]interface{}{"command": "go test ./..."})
-	if !r.ShouldExecute() {
-		t.Error("go test should auto-execute")
-	}
-}

@@ -96,43 +96,6 @@ func TestLargeResponseHandler_Large(t *testing.T) {
 	}
 }
 
-func TestToolConfirmationRouter_Safe(t *testing.T) {
-	r := NewToolConfirmationRouter()
-	if r.NeedsConfirmation("Read", nil) {
-		t.Error("Read should not need confirmation")
-	}
-	if r.NeedsConfirmation("Grep", nil) {
-		t.Error("Grep should not need confirmation")
-	}
-}
-
-func TestToolConfirmationRouter_Write(t *testing.T) {
-	r := NewToolConfirmationRouter()
-	if r.NeedsConfirmation("Write", nil) {
-		t.Error("Write should be low risk (no confirmation)")
-	}
-}
-
-func TestToolConfirmationRouter_Bash(t *testing.T) {
-	r := NewToolConfirmationRouter()
-	// Safe bash
-	if r.NeedsConfirmation("Bash", map[string]interface{}{"command": "go test ./..."}) {
-		t.Error("go test should be low risk")
-	}
-	// Dangerous bash
-	if !r.NeedsConfirmation("Bash", map[string]interface{}{"command": "rm -rf /"}) {
-		t.Error("rm -rf should need confirmation")
-	}
-}
-
-func TestToolConfirmationRouter_Override(t *testing.T) {
-	r := NewToolConfirmationRouter()
-	r.Override["Bash"] = RiskNone
-	if r.NeedsConfirmation("Bash", map[string]interface{}{"command": "rm -rf /"}) {
-		t.Error("override should bypass risk check")
-	}
-}
-
 func hasSubstr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || strings.Contains(s, sub))
 }

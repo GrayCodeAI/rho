@@ -3,14 +3,19 @@ package safety
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	contracts "github.com/GrayCodeAI/rho/internal/contracts/policy"
 	"github.com/GrayCodeAI/rho/internal/permissions"
 	"github.com/GrayCodeAI/rho/internal/tool"
 )
+
+var permissionANSIRe = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))`)
 
 // PermissionRequest is sent from engine to TUI when a tool needs approval.
 type PermissionRequest struct {
@@ -24,6 +29,8 @@ type PermissionMemory struct {
 	allowRules []string // patterns like "bash:go test*", "file_write:*.go"
 	denyRules  []string
 	allowAll   map[string]bool // tool names that are always allowed
+	allowExact map[string]bool // literal tool+identity grants
+	denyExact  map[string]bool // literal tool+identity denials
 }
 
 // RuleSnapshot is an immutable copy of remembered permission rules.
@@ -31,10 +38,12 @@ type RuleSnapshot struct {
 	AllowRules []string
 	DenyRules  []string
 	AllowAll   map[string]bool
+	AllowExact map[string]bool
+	DenyExact  map[string]bool
 }
 
 func NewPermissionMemory() *PermissionMemory {
-	return &PermissionMemory{allowAll: make(map[string]bool)}
+	return &PermissionMemory{allowAll: make(map[string]bool), allowExact: make(map[string]bool), denyExact: make(map[string]bool)}
 }
 
 // Snapshot returns a deep copy that can safely be used by one evaluation.
@@ -48,7 +57,15 @@ func (pm *PermissionMemory) Snapshot() RuleSnapshot {
 	for name, allowed := range pm.allowAll {
 		allowAll[name] = allowed
 	}
-	return RuleSnapshot{AllowRules: append([]string(nil), pm.allowRules...), DenyRules: append([]string(nil), pm.denyRules...), AllowAll: allowAll}
+	allowExact := make(map[string]bool, len(pm.allowExact))
+	for key, allowed := range pm.allowExact {
+		allowExact[key] = allowed
+	}
+	denyExact := make(map[string]bool, len(pm.denyExact))
+	for key, denied := range pm.denyExact {
+		denyExact[key] = denied
+	}
+	return RuleSnapshot{AllowRules: append([]string(nil), pm.allowRules...), DenyRules: append([]string(nil), pm.denyRules...), AllowAll: allowAll, AllowExact: allowExact, DenyExact: denyExact}
 }
 
 // NewPermissionMemoryFromSnapshot creates an independent rule store.
@@ -57,7 +74,31 @@ func NewPermissionMemoryFromSnapshot(snapshot RuleSnapshot) *PermissionMemory {
 	for name, allowed := range snapshot.AllowAll {
 		allowAll[name] = allowed
 	}
-	return &PermissionMemory{allowRules: append([]string(nil), snapshot.AllowRules...), denyRules: append([]string(nil), snapshot.DenyRules...), allowAll: allowAll}
+	allowExact := make(map[string]bool, len(snapshot.AllowExact))
+	for key, allowed := range snapshot.AllowExact {
+		allowExact[key] = allowed
+	}
+	denyExact := make(map[string]bool, len(snapshot.DenyExact))
+	for key, denied := range snapshot.DenyExact {
+		denyExact[key] = denied
+	}
+	return &PermissionMemory{allowRules: append([]string(nil), snapshot.AllowRules...), denyRules: append([]string(nil), snapshot.DenyRules...), allowAll: allowAll, allowExact: allowExact, denyExact: denyExact}
+}
+
+// ensureMapsLocked keeps PermissionMemory's exported zero value usable. The
+// constructor initializes these maps for the common path, but replacement
+// engines and integrations may intentionally use var pm PermissionMemory.
+// Callers must hold pm.mu while invoking this helper.
+func (pm *PermissionMemory) ensureMapsLocked() {
+	if pm.allowAll == nil {
+		pm.allowAll = make(map[string]bool)
+	}
+	if pm.allowExact == nil {
+		pm.allowExact = make(map[string]bool)
+	}
+	if pm.denyExact == nil {
+		pm.denyExact = make(map[string]bool)
+	}
 }
 
 // Grants returns the remembered allow/deny rules as canonical permissions.Grant
@@ -77,6 +118,14 @@ func (pm *PermissionMemory) Grants() []permissions.Grant {
 			Source:  permissions.SourceUserAllow,
 			Label:   "from settings",
 		})
+	}
+	for key := range pm.allowExact {
+		tool, identity := splitExactKey(key)
+		out = append(out, permissions.Grant{Tool: tool, Pattern: identity, Exact: true, Allow: true, Source: permissions.SourceUserAllow, Label: "from settings"})
+	}
+	for key := range pm.denyExact {
+		tool, identity := splitExactKey(key)
+		out = append(out, permissions.Grant{Tool: tool, Pattern: identity, Exact: true, Allow: false, Source: permissions.SourceUserDeny, Label: "from settings"})
 	}
 	for _, rule := range pm.allowRules {
 		tool, pattern := parseRuleSpec(rule)
@@ -98,6 +147,24 @@ func (pm *PermissionMemory) Grants() []permissions.Grant {
 			Label:   "from settings",
 		})
 	}
+	// Map-backed exact and tool-wide rules must be deterministic. The permission
+	// center renders this slice directly; stable ordering prevents redraws from
+	// appearing to change policy and makes audit output reproducible.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Tool != out[j].Tool {
+			return out[i].Tool < out[j].Tool
+		}
+		if out[i].Pattern != out[j].Pattern {
+			return out[i].Pattern < out[j].Pattern
+		}
+		if out[i].Exact != out[j].Exact {
+			return out[i].Exact
+		}
+		if out[i].Allow != out[j].Allow {
+			return out[i].Allow
+		}
+		return out[i].Source < out[j].Source
+	})
 	return out
 }
 
@@ -108,12 +175,15 @@ func (pm *PermissionMemory) Reset() {
 	pm.allowRules = nil
 	pm.denyRules = nil
 	pm.allowAll = make(map[string]bool)
+	pm.allowExact = make(map[string]bool)
+	pm.denyExact = make(map[string]bool)
 }
 
 // AlwaysAllow marks a tool as always allowed.
 func (pm *PermissionMemory) AlwaysAllow(toolName string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
+	pm.ensureMapsLocked()
 	pm.allowAll[canonicalToolName(toolName)] = true
 }
 
@@ -122,6 +192,15 @@ func (pm *PermissionMemory) AlwaysAllowPattern(pattern string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	pm.allowRules = append(pm.allowRules, normalizeRuleSpec(pattern))
+}
+
+// AlwaysAllowExact remembers one literal tool action for the session. Glob
+// metacharacters in the identity are never interpreted.
+func (pm *PermissionMemory) AlwaysAllowExact(toolName, identity string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.ensureMapsLocked()
+	pm.allowExact[exactRuleKey(toolName, identity)] = true
 }
 
 // AlwaysDeny marks a tool as always denied.
@@ -136,6 +215,14 @@ func (pm *PermissionMemory) AlwaysDenyPattern(pattern string) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	pm.denyRules = append(pm.denyRules, normalizeRuleSpec(pattern))
+}
+
+// AlwaysDenyExact remembers one literal tool action for the session.
+func (pm *PermissionMemory) AlwaysDenyExact(toolName, identity string) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.ensureMapsLocked()
+	pm.denyExact[exactRuleKey(toolName, identity)] = true
 }
 
 // AllowSpec applies an archive-style permission rule, e.g. "Bash(git:*)".
@@ -160,10 +247,25 @@ func (pm *PermissionMemory) DenySpec(spec string) {
 
 // Check returns: true=allowed, false=denied, nil=ask user.
 func (pm *PermissionMemory) Check(toolName string, summary string) *bool {
+	return pm.CheckWithIdentity(toolName, summary, summary)
+}
+
+// CheckWithIdentity evaluates glob rules against the bounded display summary
+// and exact rules against the complete canonical identity.
+func (pm *PermissionMemory) CheckWithIdentity(toolName, summary, identity string) *bool {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
 	toolName = canonicalToolName(toolName)
+	key := exactRuleKey(toolName, identity)
+	if pm.denyExact[key] {
+		f := false
+		return &f
+	}
+	if pm.allowExact[key] {
+		t := true
+		return &t
+	}
 
 	for _, rule := range pm.denyRules {
 		parts := strings.SplitN(rule, ":", 2)
@@ -193,80 +295,158 @@ func (pm *PermissionMemory) Check(toolName string, summary string) *bool {
 	return nil // ask user
 }
 
-// toolNeedsPermission returns true for tools that modify state.
-func ToolNeedsPermission(name string, args map[string]interface{}) bool {
-	switch canonicalToolName(name) {
-	case "Write", "Edit", "NotebookEdit":
-		return true
-	case "TerminalCreate", "TerminalSend":
-		// These hand a model-supplied string to a live shell and can mutate
-		// arbitrary state; always require approval like Bash.
-		return true
-	case "Bash":
-		// Check if the command is suspicious
-		if cmd, ok := args["command"].(string); ok {
-			return tool.IsSuspicious(cmd)
-		}
-		return true // fail-closed: if we can't parse, ask
-	default:
-		return false
-	}
+func exactRuleKey(toolName, identity string) string {
+	return canonicalToolName(toolName) + "\x00" + identity
 }
 
-// ToolSummary generates a human-readable summary of what a tool call will do.
-// This short form is also used for AutoMode / memory rule matching — keep it stable.
-func ToolSummary(name string, args map[string]interface{}) string {
-	switch canonicalToolName(name) {
-	case "Bash":
+func splitExactKey(key string) (toolName, identity string) {
+	parts := strings.SplitN(key, "\x00", 2)
+	if len(parts) != 2 {
+		return key, ""
+	}
+	return parts[0], parts[1]
+}
+
+type toolInvocation struct {
+	name       string
+	identity   string
+	command    string
+	hasCommand bool
+	needsAsk   bool
+}
+
+// inspectToolInvocation derives the canonical identity and command risk once.
+// Every caller that renders, previews, or executes a tool request must use the
+// same assessment so policy and UI cannot drift.
+func inspectToolInvocation(name string, args map[string]interface{}) toolInvocation {
+	inv := toolInvocation{name: canonicalToolName(name), identity: name}
+	switch inv.name {
+	case "Bash", "PowerShell":
 		if cmd, ok := args["command"].(string); ok {
-			if len(cmd) > 120 {
-				cmd = cmd[:120] + "..."
-			}
-			return cmd
+			inv.command = cmd
+			inv.hasCommand = true
+			inv.identity = cmd
 		}
-	case "Write":
-		if p, ok := pathArgument(args); ok {
-			return p
-		}
-	case "Edit":
-		if p, ok := pathArgument(args); ok {
-			return p
-		}
-	case "NotebookEdit":
-		if p, ok := pathArgument(args); ok {
-			return p
+	case "Write", "Edit", "NotebookEdit":
+		if path, ok := pathArgument(args); ok {
+			inv.identity = path
 		}
 	}
-	return name
+
+	// These tools either mutate directly or pass model-controlled text to a
+	// live shell. Shell commands only need a prompt when their content is not
+	// confidently safe; malformed input is always treated as needing approval.
+	switch inv.name {
+	case "Write", "Edit", "NotebookEdit", "TerminalCreate", "TerminalSend":
+		inv.needsAsk = true
+	case "Bash":
+		inv.needsAsk = !inv.hasCommand || tool.IsSuspicious(inv.command)
+	case "PowerShell":
+		inv.needsAsk = !inv.hasCommand || tool.IsSuspicious(inv.command) || tool.IsPowerShellSuspicious(inv.command)
+	}
+	return inv
+}
+
+// toolNeedsPermission returns true for tools that modify state or need
+// command-specific scrutiny before execution.
+func ToolNeedsPermission(name string, args map[string]interface{}) bool {
+	return inspectToolInvocation(name, args).needsAsk
+}
+
+func toolIdentity(name string, args map[string]interface{}) string {
+	return inspectToolInvocation(name, args).identity
+}
+
+func toolSummary(name string, args map[string]interface{}) string {
+	inv := inspectToolInvocation(name, args)
+	identity := inv.identity
+	canonical := inv.name
+	if (canonical == "Bash" || canonical == "PowerShell") && len(identity) > 120 {
+		return identity[:120] + "..."
+	}
+	return identity
+}
+
+// ToolIdentity returns the complete canonical action identity used by exact
+// permission rules. It is never truncated.
+func ToolIdentity(name string, args map[string]interface{}) string {
+	return toolIdentity(name, args)
+}
+
+// ToolSummary generates a human-readable, bounded summary of what a tool call
+// will do. Matching rules use this stable display form; exact rules use the
+// complete ToolIdentity instead.
+func ToolSummary(name string, args map[string]interface{}) string {
+	return toolSummary(name, args)
+}
+
+// ActionRisk returns the risk of the concrete invocation, not merely the
+// maximum capability of its tool. A shell is high-capability, but a clearly
+// non-suspicious command is medium risk; malformed or suspicious shell calls
+// remain high risk and therefore fail closed in presentation and inspection.
+func ActionRisk(toolName string, args map[string]interface{}) RiskLevel {
+	policy := ToolPolicyFor(toolName)
+	canonical := canonicalToolName(toolName)
+	if canonical != "Bash" && canonical != "PowerShell" {
+		if policy.DefaultRisk == "" {
+			return RiskMedium
+		}
+		return policy.DefaultRisk
+	}
+	inv := inspectToolInvocation(toolName, args)
+	if !inv.hasCommand || strings.TrimSpace(inv.command) == "" || inv.needsAsk {
+		return RiskHigh
+	}
+	return RiskMedium
 }
 
 // FormatPermissionDisplay builds the multi-line body shown in the TUI permission
 // box. toolName and summary are display inputs; summary should remain ToolSummary
-// so AutoMode still matches after the user answers.
+// so remembered rules still match after the user answers.
 func FormatPermissionDisplay(toolName, summary string) string {
 	policy := ToolPolicyFor(toolName)
-	risk := string(policy.DefaultRisk)
-	if risk == "" {
-		risk = string(RiskMedium)
+	risk := string(ActionRisk(toolName, map[string]interface{}{"command": summary}))
+	why := permissionWhyLine(toolName, RiskLevel(risk), policy)
+	displaySummary := sanitizePermissionDisplay(summary)
+	if displaySummary == "" {
+		displaySummary = toolName
 	}
-	// Escalate Bash to high when the summary still looks like a shell command
-	// that was forced through a prompt (suspicious commands).
-	if canonicalToolName(toolName) == "Bash" && risk != string(RiskHigh) {
-		if tool.IsSuspicious(summary) {
-			risk = string(RiskHigh)
+	return fmt.Sprintf("[%s risk] %s\n%s\nEffects: %s\n%s", strings.ToUpper(risk), canonicalToolName(toolName), displaySummary, formatCapabilities(policy.Capabilities), why)
+}
+
+// sanitizePermissionDisplay protects the approval UI from terminal control
+// sequences and layout spoofing in model/tool arguments. Policy matching must
+// continue to use the unsanitized canonical identity; this is presentation-only.
+func sanitizePermissionDisplay(summary string) string {
+	clean := permissionANSIRe.ReplaceAllString(summary, "")
+	var b strings.Builder
+	for _, r := range clean {
+		switch {
+		case r == '\n' || r == '\r':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteByte(' ')
+		case unicode.IsControl(r) || unicode.In(r, unicode.Cf):
+			// Drop invisible/control characters, including bidi overrides.
+		default:
+			b.WriteRune(r)
 		}
 	}
-	why := permissionWhyLine(toolName, RiskLevel(risk), policy)
-	if strings.TrimSpace(summary) == "" {
-		summary = toolName
+	return truncatePermissionDisplay(strings.TrimSpace(b.String()), 240)
+}
+
+func truncatePermissionDisplay(value string, maxRunes int) string {
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
 	}
-	return fmt.Sprintf("[%s risk] %s\n%s\n%s", strings.ToUpper(risk), canonicalToolName(toolName), summary, why)
+	return string(runes[:maxRunes-3]) + "..."
 }
 
 func permissionWhyLine(toolName string, risk RiskLevel, policy ToolPolicy) string {
 	switch risk {
 	case RiskHigh:
-		if canonicalToolName(toolName) == "Bash" {
+		if canonicalToolName(toolName) == "Bash" || canonicalToolName(toolName) == "PowerShell" {
 			return "Why: shell can change your system — review the command before allowing."
 		}
 		return "Why: high-impact action needs your confirmation."
@@ -289,6 +469,17 @@ func hasCapability(policy ToolPolicy, want Capability) bool {
 	return false
 }
 
+func formatCapabilities(capabilities []Capability) string {
+	if len(capabilities) == 0 {
+		return "none declared"
+	}
+	values := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
+		values = append(values, string(capability))
+	}
+	return strings.Join(values, ", ")
+}
+
 func pathArgument(args map[string]interface{}) (string, bool) {
 	if p, ok := args["path"].(string); ok && p != "" {
 		return p, true
@@ -300,98 +491,7 @@ func pathArgument(args map[string]interface{}) (string, bool) {
 }
 
 func canonicalToolName(name string) string {
-	switch strings.ToLower(name) {
-	case "bash":
-		return "Bash"
-	case "file_read", "read":
-		return "Read"
-	case "file_write", "write":
-		return "Write"
-	case "file_edit", "edit":
-		return "Edit"
-	case "ls":
-		return "LS"
-	case "glob":
-		return "Glob"
-	case "grep":
-		return "Grep"
-	case "web_fetch", "webfetch":
-		return "WebFetch"
-	case "web_search", "websearch":
-		return "WebSearch"
-	case "code_match", "codematch", "match_code":
-		return "CodeMatch"
-	case "fuzzy_find", "fuzzyfind", "ffind":
-		return "FuzzyFind"
-	case "batch_exec", "batchexec":
-		return "BatchExec"
-	case "toolset":
-		return "Toolset"
-	case "tool_health", "toolhealth", "tools_health":
-		return "ToolHealth"
-	case "project_verify", "projectverify", "verify_project":
-		return "ProjectVerify"
-	case "app_verify", "appverify", "verify_app":
-		return "AppVerify"
-	case "generate_media", "generatemedia", "media":
-		return "GenerateMedia"
-	case "dependency_audit", "dependencyaudit", "deps":
-		return "DependencyAudit"
-	case "git_history", "githistory", "git-history":
-		return "GitHistory"
-	case "github", "gh":
-		return "GitHub"
-	case "sql", "sql_query":
-		return "SQL"
-	case "agent", "task":
-		return "Agent"
-	case "ask_user", "askuser", "askuserquestion":
-		return "AskUserQuestion"
-	case "todo", "todowrite":
-		return "TodoWrite"
-	case "lsp":
-		return "LSP"
-	case "specify":
-		return "Specify"
-	case "plan":
-		return "Plan"
-	case "tasks":
-		return "Tasks"
-	case "approve_implementation", "approveimplementation":
-		return "ApproveImplementation"
-	case "spec_status", "specstatus":
-		return "SpecStatus"
-	case "spec_edit", "specedit":
-		return "SpecEdit"
-	case "spec_list", "speclist":
-		return "SpecList"
-	case "spec_reset", "specreset":
-		return "SpecReset"
-	case "spec_config", "specconfig":
-		return "SpecConfig"
-	case "clarify":
-		return "Clarify"
-	case "analyze":
-		return "Analyze"
-	case "checklist":
-		return "Checklist"
-	case "constitution":
-		return "Constitution"
-	case "converge":
-		return "Converge"
-	case "notebook_edit", "notebookedit":
-		return "NotebookEdit"
-	case "terminal_create", "terminalcreate", "pty_create":
-		return "TerminalCreate"
-	case "terminal_send", "terminalsend", "pty_send":
-		return "TerminalSend"
-	case "config":
-		return "Config"
-	case "brief", "sendusermessage":
-		return "SendUserMessage"
-	default:
-		return name
-	}
+	return permissions.CanonicalToolName(name)
 }
 
 func parseRuleSpec(spec string) (toolName, pattern string) {

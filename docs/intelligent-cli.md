@@ -24,7 +24,7 @@ anything, grant approval, or bypass the permission engine.
 ## Useful tools
 
 ```text
-ToolHealth       list registered tools and git/go/node/python/docker/gh/Chrome availability
+ToolHealth       list registered tools and git/go/node/python/gh/Chrome availability
 ProjectVerify    detect and run bounded build/test/lint/format checks without a shell
 DependencyAudit  check dependency integrity or outdated packages without installing anything
 GitHub           list repositories, PRs, issues, checks, and workflow runs through gh

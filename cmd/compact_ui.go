@@ -80,7 +80,7 @@ func renderContextUsageBar(barWidth, pct int) string {
 	if pct > 0 && filled == 0 {
 		filled = 1
 	}
-	filledStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Inline(true)
+	filledStyle := lipgloss.NewStyle().Foreground(textWhite).Inline(true)
 	emptyStyle := lipgloss.NewStyle().Foreground(dimColor).Inline(true)
 	var parts []string
 	for i := 0; i < barWidth; i++ {

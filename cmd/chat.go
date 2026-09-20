@@ -31,8 +31,10 @@ import (
 	"github.com/GrayCodeAI/rho/internal/codegraph"
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	"github.com/GrayCodeAI/rho/internal/engine"
-	"github.com/GrayCodeAI/rho/internal/feature/shellmode"
-	"github.com/GrayCodeAI/rho/internal/feature/taste"
+	chatfeature "github.com/GrayCodeAI/rho/internal/features/chat"
+	sessionfeature "github.com/GrayCodeAI/rho/internal/features/session"
+	"github.com/GrayCodeAI/rho/internal/features/shellmode"
+	"github.com/GrayCodeAI/rho/internal/features/taste"
 	"github.com/GrayCodeAI/rho/internal/intelligence/repomap"
 	"github.com/GrayCodeAI/rho/internal/plugin"
 	"github.com/GrayCodeAI/rho/internal/session"
@@ -40,9 +42,8 @@ import (
 	rhostorage "github.com/GrayCodeAI/rho/internal/storage"
 	"github.com/GrayCodeAI/rho/internal/system/staleness"
 	"github.com/GrayCodeAI/rho/internal/tool"
+	"github.com/GrayCodeAI/rho/internal/tui"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
-
-	"github.com/GrayCodeAI/rho/internal/conversationarc"
 )
 
 // Types, styles, and model struct are in chat_model.go
@@ -93,7 +94,7 @@ func prepareSession(sess *engine.Session) (string, *session.Session, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	sess.LoadMessages(session.ToRuntimeMessages(saved.Messages))
+	sess.LoadMessages(sessionfeature.Hydrate(saved).Runtime)
 	if forkSessionFlag {
 		if sessionIDFlag != "" {
 			if err := session.ValidateID(sessionIDFlag); err != nil {
@@ -176,9 +177,9 @@ func newChatModelWithRegistry(ref *progRef, systemPrompt string, settings rhocon
 	startup.EndPhase("newChatModel:prepareSession")
 
 	// Conversation arc: durable per-session sidecar of goals/decisions/milestones.
-	arc, _ := conversationarc.Load(sessionArcDir(sid))
+	arc, _ := sessionfeature.LoadArc(sid)
 	if arc == nil {
-		arc = conversationarc.New()
+		arc = sessionfeature.NewArc()
 	}
 	sess.SetArc(arc)
 
@@ -203,11 +204,11 @@ func newChatModelWithRegistry(ref *progRef, systemPrompt string, settings rhocon
 	now := time.Now()
 	// Create a cancel function for background goroutines that gets called on quit.
 	_, bgCancel := context.WithCancel(context.Background())
-	m := chatModel{input: ta, configInput: ci, spinner: sp, viewport: vp, session: sess, registry: registry, settings: settings, ref: ref, sessionID: sid, partial: &strings.Builder{}, spinnerVerb: spinnerVerbs[rand.Intn(len(spinnerVerbs))], width: initWidth, height: initHeight, historyIdx: 0, autoScroll: true, streamFollow: true, uiFocus: focusPrompt, startedAt: now, sessionStartedAt: now, activeSkills: make(map[string]plugin.SmartSkill), toolResultExpanded: make(map[int]bool), bgCancel: bgCancel} // #nosec G404 -- non-cryptographic use (random spinner verb selection)
+	m := chatModel{input: ta, configInput: ci, spinner: sp, viewport: vp, session: sess, registry: registry, settings: settings, ref: ref, sessionID: sid, partial: &strings.Builder{}, spinnerVerb: spinnerVerbs[rand.Intn(len(spinnerVerbs))], width: initWidth, height: initHeight, history: chatfeature.NewHistory(nil, chatfeature.DefaultHistoryLimit), autoScroll: true, streamFollow: true, uiFocus: focusPrompt, startedAt: now, sessionStartedAt: now, activeSkills: make(map[string]plugin.SmartSkill), toolResultExpanded: make(map[int]bool), bgCancel: bgCancel, mascotEnabled: rhoMascotEnabled()} // #nosec G404 -- non-cryptographic use: non-cryptographic spinner selection
 	applyLiveModelMetadata(sess, effectiveProvider, effectiveModel)
 
 	startup.MarkPhase("newChatModel:commandPalette")
-	m.commandPalette = NewCommandPalette(initWidth)
+	m.commandPalette = NewCommandPaletteWithRuntime(initWidth, m.pluginRuntime)
 	startup.EndPhase("newChatModel:commandPalette")
 
 	// Give the footer an immediate cwd value without paying for a git probe
@@ -311,7 +312,7 @@ func newChatModelWithRegistry(ref *progRef, systemPrompt string, settings rhocon
 	quickSnapshot := welcomeStatusSnapshot{}
 	m.welcomeSetupState = quickSnapshot.setup
 	m.welcomeAgentsOK = quickSnapshot.agentsOK
-	m.welcomeCache = buildWelcomeMessageWithSnapshot(sess, sid, registry, saved, settings, 0, connectedMCPCount(registry), 0, initWidth, initHeight, quickSnapshot, "")
+	m.welcomeCache = buildWelcomeMessageWithSnapshotAndMascot(sess, sid, registry, saved, settings, 0, connectedMCPCount(registry), 0, initWidth, initHeight, quickSnapshot, "", m.mascotEnabled)
 	m.messages = append(m.messages, displayMsg{role: "welcome", content: m.welcomeCache})
 	// First-session control-plane tip (skip when resuming history or when quiet env var is set).
 	if saved == nil && os.Getenv("RHO_QUIET_START") == "" && os.Getenv("RHO_SUPPRESS_HINTS") == "" && os.Getenv("RHO_QUIET") == "" {
@@ -329,6 +330,19 @@ func newChatModelWithRegistry(ref *progRef, systemPrompt string, settings rhocon
 	sess.SetApproval(&engine.ApprovalGate{
 		Enabled:        true,
 		MaxAutoApprove: safety.AutonomySemi,
+		ConfirmFn: func(req engine.ApprovalRequest) engine.ApprovalResponse {
+			if sess.PermSvc() != nil && sess.PermSvc().RuntimeState().Autonomy == safety.AutonomyYOLO {
+				return engine.ApprovalApprove
+			}
+			response := make(chan engine.ApprovalResponse, 1)
+			ref.Send(approvalAskMsg{req: req, response: response})
+			select {
+			case answer := <-response:
+				return answer
+			case <-time.After(5 * time.Minute):
+				return engine.ApprovalReject
+			}
+		},
 	})
 
 	// Wire ask_user tool (5-minute timeout matches permission prompts).
@@ -357,16 +371,13 @@ func newChatModelWithRegistry(ref *progRef, systemPrompt string, settings rhocon
 	})
 
 	if saved != nil {
-		for _, sm := range saved.Messages {
-			if sm.Role == "user" || sm.Role == "assistant" {
-				m.messages = append(m.messages, displayMsg{role: sm.Role, content: sm.Content})
-			}
+		for _, message := range sessionfeature.Hydrate(saved).Display {
+			m.messages = append(m.messages, displayMsg{role: message.Role, content: message.Content})
 		}
 	}
 
 	startup.MarkPhase("newChatModel:history")
-	m.history = loadInputHistory()
-	m.historyIdx = len(m.history)
+	m.history.SetEntries(loadInputHistory())
 	startup.EndPhase("newChatModel:history")
 
 	startup.MarkPhase("newChatModel:first-paint")
@@ -521,19 +532,19 @@ func (m *chatModel) refreshInputPlaceholder() {
 	}
 	switch work {
 	case engine.WorkModePlan:
-		m.input.Placeholder = "Design architecture or draft plan...  ·  / commands  ·  ? help"
+		m.input.Placeholder = "Design architecture or draft plan...  ·  /select copy  ·  ? help"
 	case engine.WorkModeReview:
-		m.input.Placeholder = "Audit diffs, security, or PRs...  ·  / commands  ·  ? help"
+		m.input.Placeholder = "Audit diffs, security, or PRs...  ·  /select copy  ·  ? help"
 	default:
-		m.input.Placeholder = "Build, refactor, or run commands...  ·  / commands  ·  ? help"
+		m.input.Placeholder = "Build, refactor, or run commands...  ·  /select copy  ·  ? help"
 	}
 }
 
-// stopContainer is retained as a no-op: container execution has been removed.
-func (m *chatModel) stopContainer() {}
-
 func (m chatModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{initTerminalMouseCmd(m.mouseEnabled()), promptKeepAliveCmd(), eyeBlinkTickCmd()}
+	if m.mascotEnabled {
+		cmds = append(cmds, emitRhoMascotCmd())
+	}
 	if gw, _ := m.sessionGatewayModel(); strings.TrimSpace(gw) != "" {
 		cmds = append(cmds, fetchModelsAsync(gw))
 		if isXiaomiMimoProvider(gw) {
@@ -591,7 +602,6 @@ func runChat() error {
 		if active.session != nil && active.sessionID != "" {
 			active.saveSession()
 		}
-		active.stopContainer()
 	}
 	defer func() { panicSaveFn = nil }()
 
@@ -669,9 +679,7 @@ func runChat() error {
 		}
 		m.messages = append(m.messages, displayMsg{role: "user", content: promptFlag})
 		m.session.AddUser(promptFlag)
-		m.turnSawThinking = false
-		m.turnHadAssistantOutput = false
-		m.turnHadToolActivity = false
+		m.turn.Reset()
 		m.waiting = true
 	}
 
@@ -711,27 +719,35 @@ func runChat() error {
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancel = cancel
 		go func() {
-			ch, streamErr := sess.Stream(ctx)
+			streamErr := chatfeature.RunStream(ctx, sess, func(event engine.StreamEvent) {
+				dispatchStreamEvent(ref, event)
+			})
 			if streamErr != nil {
 				p.Send(streamErrMsg{err: streamErr})
-				return
 			}
-			pumpStreamEvents(ref, ch)
 		}()
 	}
 
 	finalModel, err := p.Run()
 	writeTerminalMouse(disableMouseCSI)
+	// Kitty graphics are not scoped to Bubble Tea's alternate screen. Remove
+	// the optional welcome mascot before the farewell is written so shutdown
+	// leaves only the final text message in the terminal.
+	_ = tui.ClearGraphics(os.Stderr)
 	if err != nil {
 		return err
 	}
-	fm, ok := finalModel.(chatModel)
-	if !ok {
-		return fmt.Errorf("unexpected final model type: %T", finalModel)
+	fm, err := finalChatModel(finalModel)
+	if err != nil {
+		return err
 	}
 	if fm.quitting {
 		fm.saveSession()
-		fmt.Print(formatQuitResumeMessage(fm.sessionID))
+		// Bubble Tea restores the previous screen before returning. Clear that
+		// frame and any terminal-persistent mascot so shutdown has one clean,
+		// predictable final state.
+		fmt.Print("\x1b[2J\x1b[H")
+		fmt.Println("Thank you for using Rho!")
 		return nil
 	}
 	rhoC := ansiOrange
@@ -785,4 +801,19 @@ func runChat() error {
 		fmt.Println(dimStyle.Render(fmt.Sprintf("To resume this session, run: rho --resume %s", fm.sessionID)))
 	}
 	return nil
+}
+
+// finalChatModel normalizes Bubble Tea's shutdown model. Bubble Tea may return
+// either the value passed to NewProgram or its pointer after updates; both are
+// valid representations of the same chat state.
+func finalChatModel(model tea.Model) (chatModel, error) {
+	switch m := model.(type) {
+	case chatModel:
+		return m, nil
+	case *chatModel:
+		if m != nil {
+			return *m, nil
+		}
+	}
+	return chatModel{}, fmt.Errorf("unexpected final model type: %T", model)
 }

@@ -105,9 +105,13 @@ var checkpointDeleteCmd = &cobra.Command{
 	Short: "Delete a named checkpoint",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ok, err := confirmDestructive(fmt.Sprintf("Delete checkpoint %q?", args[0]))
-		if err != nil {
-			return err
+		ok, _ := cmd.Flags().GetBool("yes")
+		if !ok {
+			var err error
+			ok, err = confirmDestructive(fmt.Sprintf("Delete checkpoint %q?", args[0]))
+			if err != nil {
+				return err
+			}
 		}
 		if !ok {
 			cmd.Printf("%s\n", auditTint("Cancelled.", textMuted))
@@ -157,6 +161,7 @@ func restoreNamedCheckpoint(cmd *cobra.Command, name string) error {
 func init() {
 	checkpointSaveCmd.Flags().StringVar(&checkpointSessionID, "session-id", "", "checkpoint a specific session ID instead of the latest")
 	checkpointListCmd.Flags().BoolVar(&checkpointListJSON, "json", false, "output checkpoints as JSON")
+	checkpointDeleteCmd.Flags().Bool("yes", false, "confirm deleting the checkpoint")
 	checkpointCmd.AddCommand(checkpointSaveCmd)
 	checkpointCmd.AddCommand(checkpointListCmd)
 	checkpointCmd.AddCommand(checkpointRestoreCmd)

@@ -8,6 +8,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	commandfeature "github.com/GrayCodeAI/rho/internal/features/commands"
+	"github.com/GrayCodeAI/rho/internal/plugin"
 )
 
 // CommandPaletteEntry represents a single command in the palette.
@@ -20,47 +22,88 @@ type CommandPaletteEntry struct {
 
 // CommandPalette is a Ctrl+K command palette for quick command discovery.
 type CommandPalette struct {
-	open     bool
-	input    textinput.Model
-	entries  []CommandPaletteEntry
-	filtered []CommandPaletteEntry
-	sel      int
-	width    int
+	open       bool
+	input      textinput.Model
+	inputReady bool
+	entries    []CommandPaletteEntry
+	filtered   []CommandPaletteEntry
+	sel        int
+	width      int
 }
 
-var (
-	paletteTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-	paletteInputStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Padding(0, 1)
-	paletteItemStyle     = lipgloss.NewStyle().Padding(0, 1)
-	paletteSelStyle      = lipgloss.NewStyle().Padding(0, 1).Background(lipgloss.Color("240")).Foreground(lipgloss.Color("230"))
-	paletteDescStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	paletteCategoryStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
-	paletteDimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	paletteBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("62")).Padding(0, 1)
-)
+func (cp *CommandPalette) ensureInput() {
+	if cp.inputReady {
+		return
+	}
+	ti := textinput.New()
+	ti.Placeholder = "Type to search commands..."
+	ti.SetWidth(40)
+	cp.input = ti
+	cp.inputReady = true
+}
+
+// Palette styles are functions rather than package-level values so live theme
+// changes apply to every picker, not only to newly created widgets.
+func paletteTitleStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).Foreground(rhoColor)
+}
+
+func paletteInputStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderDim).Padding(0, 1)
+}
+
+func paletteItemStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Padding(0, 1).Foreground(textPrimary)
+}
+
+func paletteSelStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Padding(0, 1).Background(bgCode).Foreground(textPrimary)
+}
+
+func paletteDescStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(textMuted)
+}
+
+func paletteCategoryStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(rhoColor).Bold(true)
+}
+
+func paletteDimStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(textDisabled)
+}
+
+func paletteBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderDim).Padding(0, 1)
+}
 
 // NewCommandPalette creates a new command palette with all available commands.
 func NewCommandPalette(width int) *CommandPalette {
-	ti := textinput.New()
-	ti.Placeholder = "Type to search commands..."
-	ti.Focus()
-	ti.SetWidth(40)
+	return newCommandPalette(width, nil)
+}
 
-	cp := &CommandPalette{
-		input: ti,
-		width: width,
-	}
-	cp.entries = cp.buildEntries()
+func NewCommandPaletteWithRuntime(width int, runtime *plugin.Runtime) *CommandPalette {
+	return newCommandPalette(width, runtime)
+}
+
+func newCommandPalette(width int, runtime *plugin.Runtime) *CommandPalette {
+	cp := &CommandPalette{width: width}
+	cp.ensureInput()
+	cp.input.Focus()
+	cp.entries = cp.buildEntries(runtime)
 	cp.filtered = cp.entries
 	return cp
 }
 
 // buildEntries builds the full list of palette entries from slash commands.
-func (cp *CommandPalette) buildEntries() []CommandPaletteEntry {
-	commands := slashCommands()
+func (cp *CommandPalette) buildEntries(runtime *plugin.Runtime) []CommandPaletteEntry {
+	commands := slashCommandsFor(runtime)
+	descriptions := slashDescriptionsFor(runtime)
 	entries := make([]CommandPaletteEntry, 0, len(commands))
 	for _, name := range commands {
-		desc := slashCommandDescription(name)
+		desc := descriptions[name]
+		if desc == "" {
+			desc = slashCommandDescription(name)
+		}
 		entries = append(entries, CommandPaletteEntry{
 			Name:        name,
 			Description: desc,
@@ -77,6 +120,12 @@ func (cp *CommandPalette) buildEntries() []CommandPaletteEntry {
 	return entries
 }
 
+func (cp *CommandPalette) RefreshRuntime(runtime *plugin.Runtime) {
+	cp.entries = cp.buildEntries(runtime)
+	cp.filtered = cp.entries
+	cp.sel = 0
+}
+
 func slashCommandDescription(name string) string {
 	if desc := slashDescriptions[name]; desc != "" {
 		return desc
@@ -89,28 +138,15 @@ func slashCommandDescription(name string) string {
 }
 
 func slashCommandCategory(name string) string {
-	switch name {
-	case "/help", "/model", "/config", "/quit", "/exit", "/clear", "/compact", "/undo", "/snapshot", "/recover", "/new", "/copy", "/welcome":
-		return "Core"
-	case "/review", "/commit", "/test", "/lint", "/diff", "/status", "/audit", "/security-review", "/check", "/bughunter", "/hunt", "/ultrareview":
-		return "Workflow"
-	case "/agents", "/agents-init", "/mission", "/exec", "/research", "/loop", "/council", "/dream", "/investigate", "/vibe":
-		return "Agent"
-	case "/memory", "/context", "/ctx", "/search", "/history", "/session", "/sessions", "/export", "/share", "/fork", "/branches", "/branch":
-		return "Memory"
-	case "/tools", "/mcp", "/plugin", "/plugins", "/skills", "/files", "/image", "/render", "/ecosystem", "/path":
-		return "Tools"
-	case "/doctor", "/cost", "/usage", "/metrics", "/stats", "/integrity", "/stale", "/tokens", "/provider-status":
-		return "Diagnostics"
-	case "/autonomy", "/spec", "/vim", "/theme", "/color", "/mouse", "/select", "/focus", "/follow", "/output-style", "/statusline", "/keybindings", "/voice", "/remote-env", "/refresh-model-catalog":
-		return "Settings"
-	default:
-		return "Other"
-	}
+	return commandfeature.Category(name)
 }
 
 // Open opens the command palette.
 func (cp *CommandPalette) Open() {
+	cp.ensureInput()
+	if len(cp.entries) == 0 {
+		cp.entries = cp.buildEntries(nil)
+	}
 	cp.open = true
 	cp.input.SetValue("")
 	cp.filtered = cp.entries
@@ -138,30 +174,32 @@ func (cp *CommandPalette) Selected() *CommandPaletteEntry {
 	return nil
 }
 
-// Update handles key events for the command palette.
-func (cp *CommandPalette) Update(msg tea.KeyMsg) (string, bool) {
+// Update handles key events for the command palette. The returned command is
+// the text input's follow-up work (for example cursor blink); callers must
+// return it to Bubble Tea rather than discarding it.
+func (cp *CommandPalette) Update(msg tea.KeyMsg) (string, bool, tea.Cmd) {
 	if !cp.open {
-		return "", false
+		return "", false, nil
 	}
 
 	// Ctrl+K toggles the palette — press again to close (editor muscle memory).
 	// Must check string form; there's no tea.KeyCtrlK constant in this Bubble Tea version.
 	if msg.String() == "ctrl+k" || msg.String() == "ctrl+p" {
 		cp.Close()
-		return "", true
+		return "", true, nil
 	}
 
 	switch key := msg.Key(); key.Code {
 	case tea.KeyEsc:
 		cp.Close()
-		return "", true
+		return "", true, nil
 	case tea.KeyEnter:
 		if sel := cp.Selected(); sel != nil {
 			action := sel.Action
 			cp.Close()
-			return action, true
+			return action, true, nil
 		}
-		return "", true
+		return "", true, nil
 	case tea.KeyUp:
 		if len(cp.filtered) > 0 {
 			cp.sel--
@@ -169,26 +207,25 @@ func (cp *CommandPalette) Update(msg tea.KeyMsg) (string, bool) {
 				cp.sel = len(cp.filtered) - 1
 			}
 		}
-		return "", true
+		return "", true, nil
 	case tea.KeyDown:
 		if len(cp.filtered) > 0 {
 			cp.sel = (cp.sel + 1) % len(cp.filtered)
 		}
-		return "", true
+		return "", true, nil
 	case tea.KeyTab:
 		if sel := cp.Selected(); sel != nil {
 			cp.input.SetValue(sel.Action + " ")
 			cp.input.CursorEnd()
 			cp.filter(cp.input.Value())
 		}
-		return "", true
+		return "", true, nil
 	default:
 		var cmd tea.Cmd
 		cp.input, cmd = cp.input.Update(msg)
-		_ = cmd
 		cp.filter(cp.input.Value())
 		cp.sel = 0
-		return "", true
+		return "", true, cmd
 	}
 }
 
@@ -250,20 +287,19 @@ func (cp *CommandPalette) Render(viewWidth int) string {
 	}
 
 	var b strings.Builder
-
 	// Title
-	b.WriteString(paletteTitleStyle.Render("  Command Palette"))
-	b.WriteString(paletteDimStyle.Render("  (Esc to close, Enter to run, Tab to edit)"))
+	b.WriteString(paletteTitleStyle().Render("  Command Palette"))
+	b.WriteString(paletteDimStyle().Render("  (Esc to close, Enter to run, Tab to edit)"))
 	b.WriteString("\n\n")
 
 	// Input
 	cp.input.SetWidth(boxWidth - 4)
-	b.WriteString(paletteInputStyle.Width(boxWidth - 2).Render(cp.input.View()))
+	b.WriteString(paletteInputStyle().Width(boxWidth - 2).Render(cp.input.View()))
 	b.WriteString("\n\n")
 
 	// Results
 	if len(cp.filtered) == 0 {
-		b.WriteString(paletteDimStyle.Render("  No matching commands"))
+		b.WriteString(paletteDimStyle().Render("  No matching commands"))
 	} else {
 		start := 0
 		if cp.sel >= maxVisible {
@@ -280,23 +316,23 @@ func (cp *CommandPalette) Render(viewWidth int) string {
 			e := cp.filtered[i]
 			if e.Category != currentCat {
 				currentCat = e.Category
-				b.WriteString(paletteCategoryStyle.Render("  "+currentCat) + "\n")
+				b.WriteString(paletteCategoryStyle().Render("  "+currentCat) + "\n")
 			}
 
-			line := fmt.Sprintf("  %-18s %s", e.Name, paletteDescStyle.Render(e.Description))
+			line := fmt.Sprintf("  %-18s %s", e.Name, paletteDescStyle().Render(e.Description))
 			if i == cp.sel {
-				b.WriteString(paletteSelStyle.Width(boxWidth).Render(line))
+				b.WriteString(paletteSelStyle().Width(boxWidth).Render(line))
 			} else {
-				b.WriteString(paletteItemStyle.Width(boxWidth).Render(line))
+				b.WriteString(paletteItemStyle().Width(boxWidth).Render(line))
 			}
 			b.WriteString("\n")
 		}
 
 		// Scroll indicator
 		if len(cp.filtered) > maxVisible {
-			b.WriteString(paletteDimStyle.Render(fmt.Sprintf("  %d/%d results", cp.sel+1, len(cp.filtered))))
+			b.WriteString(paletteDimStyle().Render(fmt.Sprintf("  %d/%d results", cp.sel+1, len(cp.filtered))))
 		}
 	}
 
-	return paletteBoxStyle.Width(boxWidth).Render(b.String())
+	return paletteBoxStyle().Width(boxWidth).Render(b.String())
 }

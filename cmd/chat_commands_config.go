@@ -7,18 +7,25 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
+	configfeature "github.com/GrayCodeAI/rho/internal/features/config"
 )
 
-// handleConfigCommand handles the /config command and all its subcommands.
+// handleConfigCommand handles /config policy through the feature parser and
+// keeps only persistence, session synchronization, and TUI transitions here.
 func (m *chatModel) handleConfigCommand(parts []string, text string) (tea.Model, tea.Cmd) {
-	if len(parts) >= 3 && parts[1] == "provider" {
-		value := strings.TrimSpace(strings.Join(parts[2:], " "))
-		if err := rhoconfig.SetGlobalSetting("provider", value); err != nil {
+	command, err := configfeature.ParseCommand(parts)
+	if err != nil {
+		m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
+		return m, nil
+	}
+
+	switch command.Action {
+	case configfeature.ActionProvider:
+		if err := rhoconfig.SetGlobalSetting("provider", command.Value); err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
 		}
 		m.syncSessionSelection()
-		// Use cached model or set first from cache
 		modelCacheMu.RLock()
 		cached, cacheHit := modelCache[m.session.Provider()]
 		modelCacheMu.RUnlock()
@@ -26,24 +33,23 @@ func (m *chatModel) handleConfigCommand(parts []string, text string) (tea.Model,
 			m.session.SetModel(cached[0].ID)
 			_ = rhoconfig.SetGlobalSetting("model", cached[0].ID)
 		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Provider set to: %s\nModel: %s\nSaved in flux (provider.json).", value, m.session.Model())})
+		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Provider set to: %s\nModel: %s\nSaved in flux (provider.json).", command.Value, m.session.Model())})
 		return m, nil
-	}
-	if len(parts) >= 3 && parts[1] == "model" {
-		value := strings.TrimSpace(strings.Join(parts[2:], " "))
+
+	case configfeature.ActionModel:
+		value := command.Value
 		known := configModelChoices(m.configModelOptions, false)
 		if len(known) > 0 {
 			found := false
-			for i, k := range known {
-				if strings.EqualFold(k, value) || strings.EqualFold(m.configModelOptions[i].ID, value) {
+			for i, name := range known {
+				if strings.EqualFold(name, value) || strings.EqualFold(m.configModelOptions[i].ID, value) {
 					value = m.configModelOptions[i].ID
 					found = true
 					break
 				}
 			}
 			if !found {
-				hint := "Unknown model: " + value + "\nUse /model to browse available models."
-				m.messages = append(m.messages, displayMsg{role: "error", content: hint})
+				m.messages = append(m.messages, displayMsg{role: "error", content: "Unknown model: " + value + "\nUse /model to browse available models."})
 				return m, nil
 			}
 		}
@@ -54,60 +60,51 @@ func (m *chatModel) handleConfigCommand(parts []string, text string) (tea.Model,
 		m.syncSessionSelection()
 		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Model switched to: %s\nSaved in flux (provider.json).", m.session.Model())})
 		return m, nil
-	}
-	if len(parts) >= 2 && parts[1] == "keys" {
+
+	case configfeature.ActionKeys:
 		m.messages = append(m.messages, displayMsg{role: "system", content: apiKeyConfigSummary()})
 		return m, nil
-	}
-	if len(parts) >= 3 && parts[1] == "key" && parts[2] == "remove" {
-		if len(parts) > 3 {
-			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /config key remove"})
-			return m, nil
-		}
+
+	case configfeature.ActionRemoveKey:
 		return m.openConfigRemoveKeyPanel()
-	}
-	if len(parts) >= 3 && parts[1] == "get" {
+
+	case configfeature.ActionGet:
 		settings, err := loadEffectiveSettings()
 		if err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
 		}
-		value, ok := rhoconfig.SettingValue(settings, parts[2])
+		value, ok := rhoconfig.SettingValue(settings, command.Key)
 		if !ok {
-			m.messages = append(m.messages, displayMsg{role: "error", content: fmt.Sprintf("Unsupported setting key %q", parts[2])})
+			m.messages = append(m.messages, displayMsg{role: "error", content: fmt.Sprintf("Unsupported setting key %q", command.Key)})
 			return m, nil
 		}
 		if strings.TrimSpace(value) == "" {
 			value = "(empty)"
 		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("%s = %s", parts[2], value)})
+		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("%s = %s", command.Key, value)})
 		return m, nil
-	}
-	if len(parts) >= 4 && parts[1] == "set" {
-		key := parts[2]
-		value := strings.TrimSpace(strings.Join(parts[3:], " "))
-		if err := rhoconfig.SetGlobalSetting(key, value); err != nil {
+
+	case configfeature.ActionSet:
+		if err := rhoconfig.SetGlobalSetting(command.Key, command.Value); err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
 		}
-		// Apply common runtime keys immediately.
-		normalizedKey := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "-", ""), "_", ""))
-		switch normalizedKey {
-		case "model":
-			m.syncSessionSelection()
-		case "provider":
+		switch configfeature.NormalizeKey(command.Key) {
+		case "model", "provider":
 			m.syncSessionSelection()
 		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Updated %s = %s", key, value)})
+		m.messages = append(m.messages, displayMsg{role: "system", content: configfeature.UpdatedMessage(command.Key, command.Value)})
 		return m, nil
 	}
+
 	settings, err := loadEffectiveSettings()
 	if err != nil {
 		m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 		return m, nil
 	}
 	m.settings = settings
-	next, cmd := m.openConfigPanel()
+	next, teaCmd := m.openConfigPanel()
 	*m = next
-	return m, cmd
+	return m, teaCmd
 }

@@ -2,7 +2,7 @@
 
 Status: Implemented (branch `feat/competitive-analysis-top20`, 2026-09-09)
 Scope: rho (this repo) vs 10 AI coding CLIs + 6 dev CLIs + 4 terminals (incl. `herdr` multiplexer)
-Related: `docs/plans/toolbench-comparison-vs-top20.md` (tool-count parity), `docs/SECURITY-DEVELOPER.md` (sandbox model), `docs/plans/pi-adoption-plan.md` (Kitty graphics already proposed), `docs/RESEARCH.md` (top-20 research-paper comparison + implementation record)
+Related: `docs/plans/toolbench-comparison-vs-top20.md` (tool-count parity), `docs/SECURITY-DEVELOPER.md` (permission model), `docs/plans/pi-adoption-plan.md` (Kitty graphics already proposed), `docs/RESEARCH.md` (top-20 research-paper comparison + implementation record)
 
 ## Methodology (no assumptions)
 
@@ -10,13 +10,13 @@ Verified from source in this repo:
 
 - Tools: `cmd/chat_tools.go:41-192` — 34 essential + ~90 lazy-loaded optional (126 unique `tool.*Tool` refs; prior plan counted 69 — surface grew, mostly `spec_*`).
 - Browser/Screenshot: `tool.BrowserTool{}`, `tool.ScreenshotTool{}` in essential set (`cmd/chat_tools.go:75-76`); headless Chrome via chromedp per prior plan.
-- Sandbox: mandatory Docker, fail-closed, never host fallback — `docs/SECURITY-DEVELOPER.md:71-73`, `internal/sandbox/container.go:72-74`.
+- Execution: direct host execution behind the permission engine and path guard; no container backend.
 - Creds: OS secret store only, no `.env`/env read — `docs/SECURITY-DEVELOPER.md:7-12`.
 - Share: local deeplink only — `internal/session/export.go:801-819` returns `rho://share/<hash[:16]>`, no hosted URL.
 - Custom providers: supported — `internal/config/settings.go:50` (`custom_providers`), `internal/config/engine.go:32-50`.
 - Unwired backends: `internal/tool/computer_use.go:67-94` (`SetComputerBackend`, nil default), `internal/tool/media_generation.go:69-71` (`SetMediaEngine`, nil default).
 - Terminal detect covers kitty/ghostty/wezterm/alacritty names (`internal/ui/icons/detect_test.go:56`); Kitty graphics protocol not implemented (see `docs/plans/pi-adoption-plan.md:25`).
-- Bench infra exists (`internal/feature/eval/`, `make bench`) but README publishes no numbers.
+- Bench infra exists (`internal/features/eval/`, `make bench`) but README publishes no numbers.
 
 External star counts below are approximate web-search snapshots (2026-09-08), not repo-verified. Treat as order-of-magnitude traction, not exact rankings. rho is pre-release (`VERSION`: `0.0.1`, `README.md:40-44` source-build primary) — it competes on architecture, not stars.
 
@@ -65,7 +65,7 @@ External star counts below are approximate web-search snapshots (2026-09-08), no
 2. **Language/distro.** Go+MIT+zero-CGO (`Makefile:54`, `go.mod:3`) matches `gh/fzf/lazygit` enterprise-safe profile. Avoid GPL/EUPL patterns (kitty/eza). Rust wave wins on published benchmarks — rho has `make bench` but publishes none (Gap-04).
 3. **Providers.** rho routes only via `flux/engine` facade (`docs/SECURITY-DEVELOPER.md:51-56`, `ecosystem.yaml:29-30`); custom OpenAI-compat supported (`internal/config/settings.go:50`). Count messaging ("28 first-class" per README) trails OpenCode 75+ / Hermes 300+ — fix by exposing catalog count dynamically, not by forking providers into CLI (ownership lives in router per AGENTS.md).
 4. **TUI/UX.** Bubble Tea v2 + vim keys + `/autonomy` + `/spec` + watch `AI!`/`AI?` + visual diff is competitive. Missing vs field: hosted share-link (ours is local `rho://` deeplink), multi-session grid (we have `mission` worktrees + daemon — unsurfaced like herdr/cmux). Gap-02.
-5. **Sandbox.** Docker-only fail-closed is strictest default alongside Codex net-off and Gemini gVisor. Tradeoff is onboarding friction without Docker. Must not add host-exec fallback (violates `docs/SECURITY-DEVELOPER.md:71-73`); fix with preflight/path/doctor messaging + image pull/build guidance. Gap-01.
+5. **Execution safety.** Host execution keeps onboarding simple, but requires strong permission, path, approval, and audit controls. Keep those controls explicit and testable; do not add a hidden execution backend.
 6. **Memory/context.** AST repomap + Harrier graph + compaction segments + relevance-prune + conversation-arc + 80% tool-result clearing exceeds most. Missing: Hermes-style auto-skill learning loop (we have curator archive + harness — surface it).
 7. **Multi-agent.** `mission` worktrees + family messenger + path reservations + budgets + portable `mission-graph.json` + `graph export` (hashes only) is unique verifiable-execution story. Surface it; no new runtime needed.
 8. **MCP/skills/plugins.** MCP stdio/HTTP/SSE/WS + LSP + skills search/install/audit + curator matches Goose/Gemini/Codex. Contracts live in `internal/contracts` — extensions vendor DTOs. Correct; don't regress.
@@ -74,12 +74,11 @@ External star counts below are approximate web-search snapshots (2026-09-08), no
 
 ## Verdict
 
-- **Wins to keep:** fail-closed Docker + dual `/autonomy`+`/spec` gates; portable execution graph; Go zero-CGO MIT; router-facade-only provider access; 120+ tool surface (see `docs/plans/toolbench-comparison-vs-top20.md` for category parity).
+- **Wins to keep:** explicit host permission gates + dual `/autonomy`/`/spec` gates; portable execution graph; Go zero-CGO MIT; router-facade-only provider access; 120+ tool surface (see `docs/plans/toolbench-comparison-vs-top20.md` for category parity).
 - **Loses to fix (filed as plans):** Gap-01 onboarding friction; Gap-02 share/multi-session; Gap-03 Kitty graphics; Gap-04 published benchmarks; Gap-05 default backend wiring.
 
 ## Gap plans (this branch — implemented 2026-09-09)
 
-- `docs/plans/competitive-gap-01-docker-onboarding.md` ✅
 - `docs/plans/competitive-gap-02-share-multisession.md` ✅
 - `docs/plans/competitive-gap-03-kitty-graphics.md` ✅
 - `docs/plans/competitive-gap-04-published-benchmarks.md` ✅

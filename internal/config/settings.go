@@ -29,7 +29,7 @@ func fetchModelsViaRuntime(ctx context.Context, provider string) ([]EngineModel,
 // Settings holds rho configuration.
 // Rho: no API keys stored here. Secrets come from the OS secret store via flux.
 type Settings struct {
-	// PolicySchemaVersion versions permission/autonomy/sandbox fields. Zero is
+	// PolicySchemaVersion versions permission/autonomy fields. Zero is
 	// the legacy format and is migrated to CurrentPolicySchemaVersion on load.
 	PolicySchemaVersion int `json:"policy_schema_version,omitempty"`
 	// Model and Provider carry runtime host overrides only (e.g. --settings).

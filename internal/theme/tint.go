@@ -45,3 +45,7 @@ var (
 	ReportInfo    = lipgloss.Color("#75B1E2") // sky
 	ReportMuted   = lipgloss.Color("#9E9E9E") // gray
 )
+
+// ReportErrorANSI is the truecolor SGR prefix for ReportError. It is exposed
+// for stderr paths that must decide color support independently of stdout.
+const ReportErrorANSI = "\x1b[38;2;255;107;107m"

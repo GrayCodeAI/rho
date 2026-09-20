@@ -1,6 +1,7 @@
 package governance
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -146,6 +147,14 @@ func TestLoadPolicyFromFile(t *testing.T) {
 	}
 	if d := e.Evaluate("Bash", ""); d.Allowed {
 		t.Fatalf("expected Bash denied: %+v", d)
+	}
+}
+
+func TestLoadPolicyMissingFilePreservesNotExistCause(t *testing.T) {
+	e := New()
+	err := e.LoadPolicy(filepath.Join(t.TempDir(), "missing-policy.json"))
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing policy error must preserve os.ErrNotExist, got %v", err)
 	}
 }
 

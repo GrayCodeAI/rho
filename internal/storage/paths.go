@@ -24,20 +24,12 @@ func legacyEnvDir(legacyKey string) string {
 	return strings.TrimSpace(os.Getenv(legacyKey))
 }
 
-// resolveAppDir returns the app directory under root, preferring the current
-// name but falling back to the legacy ".hawk" directory when it already exists
-// and the new one does not. This keeps an existing install's settings,
-// sessions, and caches in place across the rename.
+// resolveAppDir returns the current Rho app directory under root. Legacy
+// environment-variable overrides remain supported explicitly, but an
+// auto-detected Hawk directory must not silently become Rho's active state:
+// it produces confusing paths and can be unwritable after the rebrand.
 func resolveAppDir(root string) string {
-	current := filepath.Join(root, appName)
-	if _, err := os.Stat(current); err == nil {
-		return current
-	}
-	legacy := filepath.Join(root, legacyAppName)
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy
-	}
-	return current
+	return filepath.Join(root, appName)
 }
 
 // ConfigDir returns the per-user configuration directory for Rho.

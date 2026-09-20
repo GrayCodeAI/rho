@@ -484,15 +484,15 @@ var builtinErrorPatterns = map[string]*ErrorHelp{
 		},
 	},
 
-	"rho_sandbox_violation": {
-		Pattern:     regexp.MustCompile(`(sandbox violation|operation not permitted by sandbox)`),
-		Title:       "Sandbox security violation",
-		Explanation: "The operation was blocked by the sandbox security policy. The command attempted to access a resource outside the allowed scope.",
+	"rho_path_boundary_violation": {
+		Pattern:     regexp.MustCompile(`(path boundary violation|operation not permitted outside allowed path)`),
+		Title:       "Path boundary violation",
+		Explanation: "The operation was blocked because it attempted to access a resource outside the allowed project paths.",
 		Suggestions: []string{
-			"Check which paths are allowed by the sandbox configuration",
+			"Check which paths are allowed by the project policy",
 			"Request permission for the specific operation",
 			"Verify the file is within the project directory",
-			"Check sandbox settings in Rho user settings",
+			"Check Rho permission settings",
 		},
 		Examples: []string{
 			"// Ensure operations target files within the project root",
@@ -557,22 +557,6 @@ var builtinErrorPatterns = map[string]*ErrorHelp{
 		},
 		Examples: []string{
 			"// Compile-time check:\nvar _ MyInterface = (*MyType)(nil)",
-		},
-	},
-
-	"docker_not_found": {
-		Pattern:     regexp.MustCompile(`(docker: command not found|Cannot connect to the Docker daemon)`),
-		Title:       "Docker unavailable",
-		Explanation: "Docker is either not installed or the daemon is not running. Docker requires both the CLI tool and a running daemon.",
-		Suggestions: []string{
-			"Install Docker if not present",
-			"Start the Docker daemon (systemctl start docker or open Docker Desktop)",
-			"Check if your user is in the docker group",
-			"Verify Docker socket permissions",
-		},
-		Examples: []string{
-			"sudo systemctl start docker",
-			"docker info  # verify daemon is running",
 		},
 	},
 
@@ -729,7 +713,7 @@ func classifySeverity(err string) string {
 		}
 	}
 
-	high := []string{"permission denied", "import cycle", "merge conflict", "budget exceeded", "sandbox violation"}
+	high := []string{"permission denied", "import cycle", "merge conflict", "budget exceeded", "path boundary violation"}
 	for _, kw := range high {
 		if strings.Contains(errLower, kw) {
 			return "HIGH"

@@ -6,7 +6,6 @@ import (
 	"math/rand/v2"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/GrayCodeAI/rho/internal/engine/safety"
 
@@ -16,7 +15,6 @@ import (
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	"github.com/GrayCodeAI/rho/internal/session"
 	"github.com/GrayCodeAI/rho/internal/spec"
-	"github.com/GrayCodeAI/rho/internal/tool"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
 )
 
@@ -63,25 +61,14 @@ func (m *chatModel) applyPromptArrowKey(msg tea.KeyMsg) bool {
 	}
 	switch msg.Key().Code {
 	case tea.KeyUp:
-		if len(m.history) > 0 {
-			if m.historyIdx == len(m.history) {
-				m.historyDraft = m.input.Value()
-			}
-			if m.historyIdx > 0 {
-				m.historyIdx--
-				m.input.SetValue(m.history[m.historyIdx])
-				m.input.CursorEnd()
-			}
+		if value, ok := m.history.Up(m.input.Value()); ok {
+			m.input.SetValue(value)
+			m.input.CursorEnd()
 		}
 		return true
 	case tea.KeyDown:
-		if m.historyIdx < len(m.history)-1 {
-			m.historyIdx++
-			m.input.SetValue(m.history[m.historyIdx])
-			m.input.CursorEnd()
-		} else if m.historyIdx == len(m.history)-1 {
-			m.historyIdx = len(m.history)
-			m.input.SetValue(m.historyDraft)
+		if value, ok := m.history.Down(); ok {
+			m.input.SetValue(value)
 			m.input.CursorEnd()
 		}
 		return true
@@ -105,11 +92,12 @@ func shouldReturnToPromptOnType(msg tea.KeyMsg) bool {
 // background workers (watcher, parallel agents, background tasks), and mark
 // the model as quitting so the final view can show the resume hint.
 func (m *chatModel) quitModel() (tea.Model, tea.Cmd) {
+	m.clearInteractivePrompts("rho is exiting")
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
 	}
-	saveInputHistory(m.history)
+	saveInputHistory(m.history.Entries())
 	m.saveSession()
 	if m.watcherStop != nil {
 		m.watcherStop()
@@ -266,148 +254,18 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Input history search (Ctrl+R) — intercept all input when open.
 		if m.historySearchOpen {
-			switch msg.String() {
-			case "ctrl+c", "ctrl+g", "escape":
-				m.historySearchOpen = false
-				m.historySearchInput = ""
-				m.historySearchQuery = ""
-				m.historySearchFiltered = nil
-				m.historySearchSel = 0
-				m.viewDirty = true
-				m.updateViewportContent()
-				return m, nil
-			case "enter":
-				if len(m.historySearchFiltered) > 0 && m.historySearchSel < len(m.historySearchFiltered) {
-					m.input.SetValue(m.historySearchFiltered[m.historySearchSel])
-					m.input.CursorEnd()
-				}
-				m.historySearchOpen = false
-				m.historySearchInput = ""
-				m.historySearchQuery = ""
-				m.historySearchFiltered = nil
-				m.historySearchSel = 0
-				m.viewDirty = true
-				m.updateViewportContent()
-				return m, nil
-			case "up":
-				if len(m.historySearchFiltered) > 0 {
-					m.historySearchSel--
-					if m.historySearchSel < 0 {
-						m.historySearchSel = len(m.historySearchFiltered) - 1
-					}
-					m.viewDirty = true
-				}
-				return m, nil
-			case "down":
-				if len(m.historySearchFiltered) > 0 {
-					m.historySearchSel = (m.historySearchSel + 1) % len(m.historySearchFiltered)
-					m.viewDirty = true
-				}
-				return m, nil
-			default:
-				// Forward printable characters to the search query.
-				if msg.Key().Text != "" && len(msg.Key().Text) > 0 {
-					// Only accept single rune input, not modifier combos.
-					if msg.Key().Mod == 0 && msg.Key().Code == 0 {
-						m.historySearchInput += msg.Key().Text
-						m.applyHistorySearchFilter()
-						m.viewDirty = true
-						return m, nil
-					}
-				}
-				// Backspace handling.
-				if msg.Key().Code == tea.KeyBackspace || msg.String() == "backspace" {
-					if len(m.historySearchInput) > 0 {
-						runes := []rune(m.historySearchInput)
-						m.historySearchInput = string(runes[:len(runes)-1])
-						m.applyHistorySearchFilter()
-						m.viewDirty = true
-					}
-					return m, nil
-				}
-				return m, nil
-			}
+			return m.handleHistorySearchKey(msg)
 		}
 
 		// Session picker (Ctrl+S) — intercept all input when open.
 		if m.sessionPickerOpen {
-			switch msg.String() {
-			case "ctrl+c", "ctrl+g", "escape":
-				m.sessionPickerOpen = false
-				m.sessionPickerInput = ""
-				m.sessionPickerEntries = nil
-				m.sessionPickerFiltered = nil
-				m.sessionPickerSel = 0
-				m.viewDirty = true
-				m.updateViewportContent()
-				return m, nil
-			case "ctrl+s":
-				// Press Ctrl+S again to close.
-				m.sessionPickerOpen = false
-				m.sessionPickerInput = ""
-				m.sessionPickerEntries = nil
-				m.sessionPickerFiltered = nil
-				m.sessionPickerSel = 0
-				m.viewDirty = true
-				m.updateViewportContent()
-				return m, nil
-			case "enter":
-				if len(m.sessionPickerFiltered) > 0 && m.sessionPickerSel < len(m.sessionPickerFiltered) {
-					selected := m.sessionPickerFiltered[m.sessionPickerSel]
-					// Close picker first.
-					m.sessionPickerOpen = false
-					m.sessionPickerInput = ""
-					m.sessionPickerEntries = nil
-					m.sessionPickerFiltered = nil
-					m.sessionPickerSel = 0
-					// Load the selected session.
-					return m.resumeSessionByID(selected.ID)
-				}
-				return m, nil
-			case "up":
-				if len(m.sessionPickerFiltered) > 0 {
-					m.sessionPickerSel--
-					if m.sessionPickerSel < 0 {
-						m.sessionPickerSel = len(m.sessionPickerFiltered) - 1
-					}
-					m.viewDirty = true
-				}
-				return m, nil
-			case "down":
-				if len(m.sessionPickerFiltered) > 0 {
-					m.sessionPickerSel = (m.sessionPickerSel + 1) % len(m.sessionPickerFiltered)
-					m.viewDirty = true
-				}
-				return m, nil
-			default:
-				// Forward printable characters to the search query.
-				if msg.Key().Text != "" && len(msg.Key().Text) > 0 {
-					if msg.Key().Mod == 0 && msg.Key().Code == 0 {
-						m.sessionPickerInput += msg.Key().Text
-						m.applySessionPickerFilter()
-						m.viewDirty = true
-						return m, nil
-					}
-				}
-				// Backspace handling.
-				if msg.Key().Code == tea.KeyBackspace || msg.String() == "backspace" {
-					if len(m.sessionPickerInput) > 0 {
-						runes := []rune(m.sessionPickerInput)
-						m.sessionPickerInput = string(runes[:len(runes)-1])
-						m.applySessionPickerFilter()
-						m.viewDirty = true
-					}
-					return m, nil
-				}
-				return m, nil
-			}
+			return m.handleSessionPickerKey(msg)
 		}
 
 		// Command palette (Ctrl+K) — intercept all input when open.
-		// Must come before the Ctrl+K selection-mode handler so the
-		// palette can receive Ctrl+K for navigation/close.
+		// The palette owns Ctrl+K while open so the shortcut toggles it cleanly.
 		if m.commandPalette != nil && m.commandPalette.IsOpen() {
-			action, handled := m.commandPalette.Update(msg)
+			action, handled, paletteCmd := m.commandPalette.Update(msg)
 			if handled {
 				if action != "" {
 					// Execute the selected command
@@ -419,18 +277,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.viewDirty = true
 					m.updateViewportContent()
 				}
-				return m, nil
+				return m, paletteCmd
 			}
-		}
-
-		// Ctrl+K enters native terminal selection mode. Available in every UI
-		// state (welcome gate, permissions, prompt, scrollback) so users always
-		// have a way to copy text out of the chat — the alt-screen +
-		// mouse-tracking combination otherwise breaks native text selection.
-		// Placed AFTER the command palette check so an open palette receives
-		// Ctrl+K for navigation/close instead of entering selection mode.
-		if msg.String() == "ctrl+k" {
-			return m, enterSelectionMode(m.ref, m.copyableTranscript(), m.mouseEnabled())
 		}
 
 		// Autonomy tier picker (/autonomy) — intercept all input when open
@@ -601,97 +449,41 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(append(cmds, cmd)...)
 		}
 
-		// Permission prompt active — handle y/n/a/d
+		// Permission prompt active — handle allow/deny scope keys.
+		if m.approvalReq != nil {
+			return m.handleApprovalResponse(msg)
+		}
+
 		if m.permReq != nil {
-			switch msg.String() {
-			case "y", "Y":
-				req := m.permReq
-				req.Response <- true
-				m.permReq = nil
-				m.permTimeoutAt = time.Time{}
-				if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().AutoMode() != nil {
-					m.session.PermSvc().AutoMode().Record(req.ToolName, req.Summary, true)
-				}
-				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CheckBold() + " Allowed"})
-			case "n", "N":
-				req := m.permReq
-				req.Response <- false
-				m.permReq = nil
-				m.permTimeoutAt = time.Time{}
-				if m.session != nil && m.session.PermSvc() != nil && m.session.PermSvc().AutoMode() != nil {
-					m.session.PermSvc().AutoMode().Record(req.ToolName, req.Summary, false)
-				}
-				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CloseThick() + " Denied"})
-			case "a", "A":
-				req := m.permReq
-				toolName := req.ToolName
-				summary := req.Summary
-				req.Response <- true
-				m.permReq = nil
-				m.permTimeoutAt = time.Time{}
-				if m.session != nil && m.session.PermSvc() != nil {
-					if mem := m.session.PermSvc().Memory(); mem != nil {
-						mem.AlwaysAllowPattern(toolName + ":*")
-					}
-					if m.session.PermSvc().AutoMode() != nil {
-						m.session.PermSvc().AutoMode().Record(toolName, summary, true)
-					}
-				}
-				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CheckBold() + " Always allowed: " + toolName + " (all)"})
-			case "d", "D":
-				req := m.permReq
-				toolName := req.ToolName
-				summary := req.Summary
-				req.Response <- false
-				m.permReq = nil
-				m.permTimeoutAt = time.Time{}
-				if m.session != nil && m.session.PermSvc() != nil {
-					if mem := m.session.PermSvc().Memory(); mem != nil {
-						mem.AlwaysDeny(toolName)
-					}
-					if m.session.PermSvc().AutoMode() != nil {
-						m.session.PermSvc().AutoMode().Record(toolName, summary, false)
-					}
-				}
-				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CloseThick() + " Always denied: " + toolName})
-			}
-			m.viewDirty = true
-			m.updateViewportContent()
-			return m, nil
+			return m.handlePermissionResponse(msg)
 		}
 
 		// Credential prompt active — handle y/n
 		if m.credentialReq != nil {
-			switch msg.String() {
-			case "y", "Y":
-				req := m.credentialReq
-				req.response <- tool.CredentialResponse{Approved: true}
-				m.credentialReq = nil
-				m.credentialTimeoutAt = time.Time{}
-				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CheckBold() + " Credential access granted: " + req.req.Name})
-			case "n", "N":
-				req := m.credentialReq
-				req.response <- tool.CredentialResponse{Approved: false, Reason: "denied by user"}
-				m.credentialReq = nil
-				m.credentialTimeoutAt = time.Time{}
-				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CloseThick() + " Credential access denied: " + req.req.Name})
-			}
-			m.viewDirty = true
-			m.updateViewportContent()
-			return m, nil
+			return m.handleCredentialResponse(msg)
 		}
 
 		// AskUser prompt active — Enter submits answer
 		if m.askReq != nil {
+			if msg.String() == "esc" || msg.String() == "escape" {
+				resolveAskUserResponse(m.askReq, "")
+				m.askReq = nil
+				m.askTimeoutAt = time.Time{}
+				m.messages = append(m.messages, displayMsg{role: "system", content: icons.CloseThick() + " Question denied."})
+				m.viewDirty = true
+				m.updateViewportContent()
+				return m.activateNextPrompt()
+			}
 			if msg.String() == "enter" {
 				answer := strings.TrimSpace(m.input.Value())
 				m.input.Reset()
 				m.messages = append(m.messages, displayMsg{role: "user", content: answer})
-				m.askReq.response <- answer
+				resolveAskUserResponse(m.askReq, answer)
 				m.askReq = nil
+				m.askTimeoutAt = time.Time{}
 				m.viewDirty = true
 				m.updateViewportContent()
-				return m, nil
+				return m.activateNextPrompt()
 			}
 			return m, m.updateInput(msg)
 		}
@@ -788,7 +580,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				case "ctrl+k", "ctrl+p":
 					if m.commandPalette == nil {
-						m.commandPalette = NewCommandPalette(m.width)
+						m.commandPalette = NewCommandPaletteWithRuntime(m.width, m.pluginRuntime)
 					}
 					m.commandPalette.Open()
 					m.viewDirty = true
@@ -821,7 +613,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				case "?":
 					// Quick help — show contextual help summary in chat.
-					m.messages = append(m.messages, displayMsg{role: "system", content: "Quick help:\n  /start           — guided setup (trust, mode, branch)\n  /mode plan|act   — research vs build\n  /isolation       — sandbox profile\n  /help            — list all commands\n  /help <topic>    — detailed help (e.g., /help /commit)\n  ctrl+K           — command palette\n  ctrl+L           — cycle autonomy tiers\n  ctrl+N           — switch model\n  ctrl+R           — search input history\n  ?                — show this help\n  Type / to see slash commands, or ask a question to get started."})
+					m.messages = append(m.messages, displayMsg{role: "system", content: "Quick help:\n  /start           — guided setup (trust, mode, branch)\n  /mode plan|act   — research vs build\n  /isolation       — workspace and permission scope\n  /help            — list all commands\n  /help <topic>    — detailed help (e.g., /help /commit)\n  ctrl+K           — command palette\n  ctrl+L           — cycle autonomy tiers\n  ctrl+N           — switch model\n  ctrl+R           — search input history\n  ?                — show this help\n  Type / to see slash commands, or ask a question to get started."})
 					m.viewDirty = true
 					m.updateViewportContent()
 					return m, nil
@@ -846,7 +638,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.supervisedPending && time.Since(m.supervisedPendingAt) > 1500*time.Millisecond {
 						m.supervisedPending = false
 					}
-					current := m.session.PermSvc().Autonomy()
+					current := m.session.PermSvc().RuntimeState().Autonomy
 					// Guard landing on Supervised: when the cycle would reach it
 					// (current is YOLO), require a second Ctrl+L within 1.5s. This
 					// prevents accidental max-friction while keeping it one deliberate
@@ -854,10 +646,6 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if isSupervisedPending(current) && !m.supervisedPending {
 						m.supervisedPending = true
 						m.supervisedPendingAt = time.Now()
-						m.messages = append(m.messages, displayMsg{
-							role:    "warning",
-							content: "Ctrl+L again within 1.5s to confirm Always Ask (max friction), or wait to skip.",
-						})
 						m.viewDirty = true
 						m.updateViewportContent()
 						return m, nil
@@ -869,16 +657,12 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						nextTier = nextAutonomyTier(current)
 					}
 					if current == 0 || autonomyTierIndex(current) < 0 {
-						nextTier = DefaultContainerAutonomy
+						nextTier = DefaultAutonomy
 					}
 					m.supervisedPending = false
 					m.session.PermSvc().SetAutonomy(nextTier)
 					m.settings.AutonomyExplicit = true
 					m.invalidateConnStatus()
-					m.messages = append(m.messages, displayMsg{
-						role:    "warning",
-						content: formatAutonomyTierMessage(nextTier) + "  ·  Ctrl+L to change",
-					})
 					m.viewDirty = true
 					m.updateViewportContent()
 					return m, nil
@@ -993,6 +777,9 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case pluginRuntimeReadyMsg:
 		if msg.runtime != nil {
 			m.pluginRuntime = msg.runtime
+			if m.commandPalette != nil {
+				m.commandPalette.RefreshRuntime(msg.runtime)
+			}
 			m.rebuildWelcomeCache(m.blinkClosed)
 			m.viewDirty = true
 			m.updateViewportContent()
@@ -1062,169 +849,62 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case streamChunkMsg:
-		if m.compacting && !m.manualCompacting {
-			m.compacting = false
-			m.brailleSpinner.SetLabel(m.spinnerVerb)
-		}
-		m.turnHadAssistantOutput = true
-		chunk := string(msg)
-		m.partial.WriteString(chunk)
-		if m.turnOutputTokens == 0 {
-			m.turnEstimatedOutputRunes += utf8.RuneCountInString(chunk)
-		}
-		if cmd := m.markPartialDirty(); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		if m.viewDirty {
-			m.updateViewportContent()
-		}
-		return m, tea.Batch(cmds...)
+		return m.handleStreamChunk(msg)
 
 	case streamRenderTickMsg:
-		m.partialRenderPending = false
-		if m.partialDirty {
-			m.viewDirty = true
-			m.partialDirty = false
-			m.lastPartialRender = time.Now()
-			m.updateViewportContent()
-		}
-		return m, nil
+		return m.handleStreamRenderTick()
 
 	case thinkingMsg:
-		m.turnSawThinking = true
+		m.turn.ObserveThinking()
 		return m, nil
 
 	case voiceResultMsg:
-		// The /voice subcommand records and transcribes on a background
-		// goroutine and reports back here, so all model mutation stays on the
-		// Bubble Tea goroutine (no data race on m.messages / m.input).
-		switch {
-		case msg.err != "":
-			m.messages = append(m.messages, displayMsg{role: "error", content: msg.err})
-		case msg.info != "":
-			m.messages = append(m.messages, displayMsg{role: "system", content: msg.info})
-		case msg.transcript != "":
-			m.input.SetValue(msg.transcript)
-			m.input.CursorEnd()
-			m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Voice input: %s", msg.transcript)})
-		}
-		m.viewDirty = true
-		m.updateViewportContent()
-		return m, nil
+		return m.handleVoiceResult(msg)
 
 	case streamRetryMsg:
-		m.partial.Reset()
-		m.turnEstimatedOutputRunes = 0
-		m.messages = stripCurrentTurnThinking(m.messages)
-		m.turnSawThinking = false
-		m.turnHadAssistantOutput = false
-		m.turnHadToolActivity = false
-		m.messages = append(m.messages, displayMsg{role: "system", content: "↻ " + msg.content})
-		m.viewDirty = true
+		return m.handleStreamRetry(msg)
 
 	case toolUseMsg:
-		m.turnHadToolActivity = true
-		if m.partial.Len() > 0 {
-			m.messages = append(m.messages, displayMsg{role: "assistant", content: m.partial.String()})
-			m.partial.Reset()
-		}
-		m.messages = append(m.messages, displayMsg{role: "tool_use", content: msg.name})
-		m.toolStartTime = time.Now()
-		m.viewDirty = true
+		return m.handleToolUse(msg)
 
 	case toolResultMsg:
-		m.turnHadToolActivity = true
-		// No "[ToolName] " prefix here — the preceding tool_use message
-		// already renders the tool's name as this block's header.
-		m.messages = append(m.messages, displayMsg{role: "tool_result", content: msg.content})
-		m.viewDirty = true
-		// Durability: persist completed tool results incrementally so a
-		// crash mid-turn doesn't lose them (they were previously only
-		// written at turn end via saveSession).
-		m.ensureWAL()
-		if m.wal != nil {
-			m.walSeq++
-			m.recordWALError(m.wal.Append(session.Message{Role: "tool_result", Content: msg.content}))
-		}
+		return m.handleToolResult(msg)
 
 	case blastRadiusMsg:
-		m.messages = append(m.messages, displayMsg{role: "warning", content: msg.message})
-		m.viewDirty = true
+		return m.handleBlastRadius(msg)
 
 	case selectionResumedMsg:
 		// Returned from enterSelectionMode. The terminal has been
 		// restored; just trigger a redraw so the viewport reflects the
 		// state that was visible before selection.
-		m.viewDirty = true
-		m.updateViewportContent()
+		return m.handleSelectionResumed()
 
 	case permissionAskMsg:
-		m.permReq = &msg.req
-		m.permReqSeq++
-		m.permTimeoutAt = time.Now().Add(5 * time.Minute)
-		// Display-only enrichment (risk + why). Keep req.Summary as ToolSummary
-		// for AutoMode / memory matching after y/n/a/d.
-		permBody := safety.FormatPermissionDisplay(msg.req.ToolName, msg.req.Summary)
-		m.messages = append(m.messages, displayMsg{role: "permission", content: permBody, timeoutAt: m.permTimeoutAt})
-		m.viewDirty = true
-		m.updateViewportContent()
-		return m, permissionPromptTimeoutCmd(m.permReqSeq)
+		return m.handlePermissionAsk(msg)
 
 	case permissionPromptTimeoutMsg:
-		if m.permReq != nil && m.permReqSeq == msg.seq {
-			// Send denial response to unblock the waiting goroutine.
-			m.permReq.Response <- false
-			m.permReq = nil
-			m.permTimeoutAt = time.Time{}
-			m.messages = append(m.messages, displayMsg{role: "system", content: icons.Timer() + " Permission prompt timed out — denied."})
-			m.viewDirty = true
-			m.updateViewportContent()
-		}
-		return m, nil
+		return m.handlePermissionTimeout(msg)
+
+	case promptCountdownTickMsg:
+		return m.handlePromptCountdownTick(msg)
+
+	case approvalAskMsg:
+		return m.handleApprovalAsk(msg)
+
+	case approvalPromptTimeoutMsg:
+		return m.handleApprovalTimeout(msg)
 
 	case askUserMsg:
-		m.askReq = &msg
-		m.askReqSeq++
-		m.messages = append(m.messages, displayMsg{role: "question", content: icons.HelpCircle() + " " + msg.question})
-		m.viewDirty = true
-		m.input.Focus()
-		m.input.SetValue("")
-		m.updateViewportContent()
-		return m, askUserPromptTimeoutCmd(m.askReqSeq)
+		return m.handleAskUser(msg)
 
 	case askUserPromptTimeoutMsg:
-		if m.askReq != nil && m.askReqSeq == msg.seq {
-			// Send empty response to unblock the waiting goroutine.
-			m.askReq.response <- ""
-			m.askReq = nil
-			m.messages = append(m.messages, displayMsg{role: "system", content: icons.Timer() + " Question timed out."})
-			m.viewDirty = true
-			m.updateViewportContent()
-			return m, m.input.Focus()
-		}
-		return m, nil
+		return m.handleAskUserTimeout(msg)
 
 	case credentialAskMsg:
-		m.credentialReq = &msg
-		m.credentialReqSeq++
-		m.credentialTimeoutAt = time.Now().Add(5 * time.Minute)
-		prompt := fmt.Sprintf("AI wants to access %s (%s): %s",
-			msg.req.Name, msg.req.Credential, msg.req.Reason)
-		m.messages = append(m.messages, displayMsg{role: "credential", content: prompt, timeoutAt: m.credentialTimeoutAt})
-		m.viewDirty = true
-		m.updateViewportContent()
-		return m, credentialPromptTimeoutCmd(m.credentialReqSeq)
+		return m.handleCredentialAsk(msg)
 
 	case credentialPromptTimeoutMsg:
-		if m.credentialReq != nil && m.credentialReqSeq == msg.seq {
-			m.credentialReq.response <- tool.CredentialResponse{Approved: false, Reason: "timed out"}
-			m.credentialReq = nil
-			m.credentialTimeoutAt = time.Time{}
-			m.messages = append(m.messages, displayMsg{role: "system", content: icons.Timer() + " Credential request timed out — denied."})
-			m.viewDirty = true
-			m.updateViewportContent()
-		}
-		return m, nil
+		return m.handleCredentialTimeout(msg)
 
 	case usageUpdateMsg:
 		if msg.usage != nil {
@@ -1272,123 +952,14 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewDirty = true
 
 	case streamDoneMsg:
-		if m.streamCancelled {
-			m.streamCancelled = false
-			m.waiting = false
-			m.cancel = nil
-			m.toolStartTime = time.Time{}
-			m.viewDirty = true
-		}
-		if m.compacting {
-			m.compacting = false
-			m.brailleSpinner.SetLabel(m.spinnerVerb)
-		}
-		m.invalidateConnStatus()
-		m.flushPartialDirty()
-		if m.partial.Len() > 0 {
-			content := sanitizeIdentity(m.partial.String())
-			m.messages = append(m.messages, displayMsg{role: "assistant", content: content})
-			m.ensureWAL()
-			if m.wal != nil {
-				m.walSeq++
-				m.recordWALError(m.wal.Append(session.Message{Role: "assistant", Content: content}))
-			}
-			// Generate ghost text suggestion from AI response
-			m.ghostText.Suggest(content)
-			m.partial.Reset()
-		} else if m.turnSawThinking && !m.turnHadAssistantOutput && !m.turnHadToolActivity {
-			// Model sent reasoning tokens but no answer — common with reasoning
-			// models when the provider drops the post-reasoning content.
-			m.messages = append(m.messages, displayMsg{
-				role:    "error",
-				content: friendlyError(fmt.Errorf("error_only_reasoning: model produced reasoning but no answer")),
-			})
-		}
-		m.turnSawThinking = false
-		// Invalidate slash suggestion cache — new messages may have changed
-		// the available command set (e.g. plugin-registered commands).
-		m.invalidateSlashSugCache()
-		// Save flags before reset so the notification check below sees
-		// the values from the turn that just completed.
-		hadOutput := m.turnHadAssistantOutput
-		wasCancelled := m.streamCancelled
-		m.turnHadAssistantOutput = false
-		m.turnHadToolActivity = false
-		// Resolve any pending permission/askUser prompts to unblock waiting goroutines.
-		if m.permReq != nil {
-			m.permReq.Response <- false
-			m.permReq = nil
-		}
-		if m.askReq != nil {
-			m.askReq.response <- ""
-			m.askReq = nil
-		}
-		m.waiting = false
-		m.cancel = nil
-		m.toolStartTime = time.Time{}
-		m.viewDirty = true
-		m.input.Focus()
-		// Persist off the UI thread: a large session JSONL write would
-		// otherwise hitch the completion frame. The WAL is removed only after
-		// the save succeeds (see saveSessionCmd).
-		if saveCmd := m.saveSessionCmd(); saveCmd != nil {
-			cmds = append(cmds, saveCmd)
-		}
-
-		// Trim old messages to prevent unbounded memory growth in long sessions.
-		m.trimOldMessages()
-
-		// Re-enable system sleep now that the turn is complete.
-		if m.sleepCancel != nil {
-			m.sleepCancel()
-			m.sleepCancel = nil
-		}
-		// Clear the terminal tab progress bar now that the turn is done.
-		ClearTabProgress()
-
-		// Send terminal notification if terminal was not focused during the
-		// turn and the agent produced output (not just tool activity).
-		if m.backgrounded && !wasCancelled && hadOutput {
-			sendTerminalNotification("rho", "Agent turn complete")
-		}
-		m.backgrounded = false
-		m.notifiedComplete = false
-
-		// Process queued messages
-		if len(m.messageQueue) > 0 {
-			nextMsg := m.messageQueue[0]
-			m.messageQueue = m.messageQueue[1:]
-			m.messages = append(m.messages, displayMsg{role: "user", content: nextMsg})
-			m.session.AddUser(nextMsg)
-			m.waiting = true
-			m.autoScroll = true
-			m.viewDirty = true
-			m.spinnerVerb = spinnerVerbs[rand.IntN(len(spinnerVerbs))] // #nosec G404 -- non-cryptographic use (random spinner verb selection)
-			m.brailleSpinner.SetLabel(m.spinnerVerb)
-			m.turnSawThinking = false
-			m.turnHadAssistantOutput = false
-			m.turnHadToolActivity = false
-			m.turnInputTokens = 0
-			m.turnOutputTokens = 0
-			m.turnEstimatedOutputRunes = 0
-			m.startedAt = time.Now()
-			m.partial.Reset()
-			m.startStream()
-			return m, tea.Batch(m.spinner.Tick, spinnerVerbTickCmd())
-		}
+		return m.handleStreamDone()
 
 	case streamErrMsg:
 		m.messages = append(m.messages, displayMsg{role: "error", content: friendlyError(msg.err)})
 		m.partial.Reset()
-		// Resolve any pending permission/askUser prompts to unblock waiting goroutines.
-		if m.permReq != nil {
-			m.permReq.Response <- false
-			m.permReq = nil
-		}
-		if m.askReq != nil {
-			m.askReq.response <- ""
-			m.askReq = nil
-		}
+		// Resolve any pending permission/approval/askUser prompts to unblock
+		// waiting goroutines. All interactive gates fail closed on stream errors.
+		m.clearInteractivePrompts("stream ended")
 		m.waiting = false
 		m.cancel = nil
 		m.toolStartTime = time.Time{}

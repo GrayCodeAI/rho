@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/GrayCodeAI/rho/internal/permissions"
 	"github.com/GrayCodeAI/rho/internal/types"
 )
 
@@ -154,30 +155,7 @@ func parsePathLine(line string, target map[string]int) {
 }
 
 func canonicalToolName(name string) string {
-	switch strings.ToLower(name) {
-	case "bash":
-		return "Bash"
-	case "file_read", "read":
-		return "Read"
-	case "file_write", "write":
-		return "Write"
-	case "file_edit", "edit":
-		return "Edit"
-	case "ls":
-		return "LS"
-	case "glob":
-		return "Glob"
-	case "grep":
-		return "Grep"
-	case "web_fetch", "webfetch":
-		return "WebFetch"
-	case "web_search", "websearch":
-		return "WebSearch"
-	case "tool_search", "toolsearch":
-		return "ToolSearch"
-	default:
-		return name
-	}
+	return permissions.CanonicalToolName(name)
 }
 
 func pathArgument(args map[string]interface{}) (string, bool) {

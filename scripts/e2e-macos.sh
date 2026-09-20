@@ -46,16 +46,12 @@ fi
 echo "--- credentials list ---"
 ./rho credentials list 2>&1 | head -10 && pass "credentials list runs" || fail "credentials list failed"
 
-# 6. Diff-sandbox status (staged file changes)
-echo "--- diff sandbox status ---"
-./rho sandbox status 2>&1 | head -10 && pass "diff sandbox status runs" || fail "diff sandbox status failed"
-
-# 7. Shell completions generate
+# 6. Shell completions generate
 echo "--- shell completions ---"
 ./rho completion bash 2>&1 | head -5 | grep -q "complete\|completion" && pass "bash completions generated" || fail "bash completions"
 ./rho completion zsh 2>&1 | head -5 | grep -q "compdef\|completion" && pass "zsh completions generated" || fail "zsh completions"
 
-# 8. Help output
+# 7. Help output
 echo "--- help ---"
 ./rho --help 2>&1 | head -5 | grep -qi "rho\|usage\|flag" && pass "help output" || fail "help output"
 

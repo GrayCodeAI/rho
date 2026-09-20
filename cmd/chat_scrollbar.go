@@ -18,10 +18,13 @@ const (
 )
 
 // scrollbarThumbStyle — Talon Gold thumb so it reads as a brand control.
-var (
-	scrollbarThumbStyle = lipgloss.NewStyle().Foreground(rhoColor)
-	scrollbarTrackStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-)
+func scrollbarThumbStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(rhoColor)
+}
+
+func scrollbarTrackStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(textDisabled)
+}
 
 // chatHasOverflow reports whether chat content exceeds the viewport height.
 func (m chatModel) chatHasOverflow() bool {
@@ -113,13 +116,13 @@ func (m chatModel) renderScrollbarHeight(vpH int) string {
 	var sb strings.Builder
 	for row := 0; row < vpH; row++ {
 		if row >= thumbTop && row <= thumbBottom {
-			sb.WriteString(scrollbarThumbStyle.Render(scrollbarThumbGlyph))
+			sb.WriteString(scrollbarThumbStyle().Render(scrollbarThumbGlyph))
 		} else if row == 0 {
-			sb.WriteString(scrollbarTrackStyle.Render(scrollbarTopGlyph))
+			sb.WriteString(scrollbarTrackStyle().Render(scrollbarTopGlyph))
 		} else if row == vpH-1 {
-			sb.WriteString(scrollbarTrackStyle.Render(scrollbarBottomGlyph))
+			sb.WriteString(scrollbarTrackStyle().Render(scrollbarBottomGlyph))
 		} else {
-			sb.WriteString(scrollbarTrackStyle.Render(scrollbarTrackGlyph))
+			sb.WriteString(scrollbarTrackStyle().Render(scrollbarTrackGlyph))
 		}
 		if row < vpH-1 {
 			sb.WriteByte('\n')
@@ -164,12 +167,14 @@ func (m chatModel) renderChatPane() string {
 	chatView = strings.Join(lines, "\n")
 
 	if !m.chatScrollbarVisible() {
-		return padToHeight(chatView, origVpH)
+		chatView = padToHeight(chatView, origVpH)
+		return chatView
 	}
 
 	scrollbar := m.renderScrollbarHeight(origVpH)
 	if scrollbar == "" {
-		return padToHeight(chatView, origVpH)
+		chatView = padToHeight(chatView, origVpH)
+		return chatView
 	}
 
 	targetW := m.viewport.Width()

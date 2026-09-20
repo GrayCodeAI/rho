@@ -20,23 +20,24 @@ var rhoBlockGlyphs = map[rune][5]string{
 	'T': {"████████", "   ██   ", "   ██   ", "   ██   ", "   ██   "},
 }
 
-// rhoLogoArtLines is the canonical RHO wordmark, with the rho forming the W.
-var rhoLogoArtLines = []string{
-	"                                     .  .",
-	"                                  .  .  .  .",
-	"                                  .  |  |  .",
-	"                               .  |        |  .",
-	"                               .              .",
-	" ___     ___    _________    . |  (\\.|\\/|./)  | .   ___   ____",
-	"|   |   |   |  /    _    \\   .   (\\ |||||| /)   .  |   | /   /",
-	"|   |___|   | |    /_\\    |  |  (\\  |/  \\|  /)  |  |   |/   /",
-	"|           | |           |    (\\            /)    |       /",
+/* legacyRhoLogoArtLines is retained only as a migration reference.
+var legacyRhoLogoArtLines = []string{
 	"|    ___    | |    ___    |   (\\              /)   |       \\",
 	"|   |   |   | |   |   |   |    \\      \\/      /    |   |\\   \\",
 	"|___|   |___| |___|   |___|     \\____/\\/\\____/     |___| \\___\\",
 	"                                    |0\\/0|",
 	"                                     \\/\\/",
 	"                                      \\/",
+}
+*/
+
+// rhoLogoArtLines is the canonical portable ASCII RHO wordmark.
+var rhoLogoArtLines = []string{
+	" ____  _   _  ___ ",
+	"|  _ \\| | | |/ _ \\ ",
+	"| |_) | |_| | | | |",
+	"|  _ <|  _  | |_| |",
+	"|_| \\_\\_| |_|\\___/",
 }
 
 const (

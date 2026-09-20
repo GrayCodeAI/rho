@@ -7,7 +7,7 @@
 # Prerequisites:
 #   - rho binary on PATH (pin a release or install from your org's package)
 #   - LLM credentials via secrets (never commit keys)
-#   - Docker available on the runner if your rho build requires container isolation
+#   - A host runner with the permissions required by the checked-out project
 #
 name: Rho CI Exec
 

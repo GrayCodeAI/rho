@@ -24,7 +24,8 @@ name and a 2026-07-05 baseline).
 GrayCode is a terminal-first AI coding agent. It differentiates on four
 load-bearing bets:
 
-1. **Fail-closed Docker sandbox** — agent commands never touch the host.
+1. **Explicit host execution controls** — agent commands run on the host only
+   after permission, path-safety, trust, and approval checks.
 2. **Dual `/autonomy` + `/spec` gates** — the agent must plan and justify before acting.
 3. **Portable execution graph** — every agent run is exported as a verifiable,
    hash-addressed graph (provenance for replay/audit).
@@ -137,7 +138,7 @@ dropped.
 Full detail in `docs/RESEARCH.md` / `docs/COMPETITIVE.md`. Key takeaways that
 shape this roadmap:
 
-- **Wins to keep (do not regress):** fail-closed Docker; dual autonomy/spec
+- **Wins to keep (do not regress):** explicit host permission controls; dual autonomy/spec
   gates; portable execution graph; Go zero-CGO MIT; router-facade-only provider
   access; 120+ tool surface; MCP/LSP/skills.
 - **Loses to close (already filed as gap plans):** onboarding friction (Gap-01),
@@ -148,9 +149,9 @@ shape this roadmap:
   (`ReflexionStore`), read-only critic (`ReadOnlyValidationWorker`). **Remaining
   wiring:** feed real model outputs into `BeamSearch` as scorer/expander (needs
   a running model + restored engines).
-- **Sandbox/security bar (web research):** fail-closed + zero-trust + no
-  host-fallback is the strictest posture alongside Codex net-off and Gemini
-  gVisor. Keep. Do not add a host-exec fallback.
+- **Execution/security bar:** host execution is acceptable only with explicit
+  zero-trust permission, path, approval, and audit controls. Keep the boundary
+  visible; do not add a hidden container backend.
 - **Skill/memory bar:** the field is converging on a single source of truth for
   skill schemas + auto-skill learning (Hermes) + long-term memory graphs.
   GrayCode's skills corpus is large but the schema is triplicated — fix the

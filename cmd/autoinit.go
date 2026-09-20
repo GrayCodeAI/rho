@@ -23,7 +23,7 @@ const autoInitContextFile = "AGENTS.md"
 //
 //   - It runs in a background goroutine so it never blocks chat startup.
 //   - It is a no-op unless the project has NO context file (AGENTS.md / RHO.md
-//     / CLAUDE.md / CONTEXT.md), no auto-init marker exists yet, and the
+//     / CONTEXT.md), no auto-init marker exists yet, and the
 //     RHO_DISABLE_AUTO_INIT kill switch is unset — all enforced by
 //     autoinit.MaybeRun.
 //   - Any failure (analysis error, write error) is swallowed; startup proceeds.

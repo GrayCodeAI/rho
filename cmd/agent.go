@@ -58,6 +58,7 @@ func init() {
 	agentCreateCmd.Flags().StringVarP(&agentCreateModel, "model", "m", "", "Model to use (empty = inherit)")
 
 	agentListCmd.Flags().BoolVar(&agentListJSON, "json", false, "output agents as JSON")
+	agentRemoveCmd.Flags().Bool("yes", false, "confirm removing the agent")
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentShowCmd)
@@ -168,15 +169,19 @@ func runAgentShow(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func runAgentRemove(_ *cobra.Command, args []string) error {
+func runAgentRemove(cmd *cobra.Command, args []string) error {
 	a, err := agents.Get(args[0])
 	if err != nil {
 		return err
 	}
 
-	ok, err := confirmDestructive(fmt.Sprintf("Remove agent %q (%s)?", a.Name, a.FilePath))
-	if err != nil {
-		return err
+	ok, _ := cmd.Flags().GetBool("yes")
+	if !ok {
+		var err error
+		ok, err = confirmDestructive(fmt.Sprintf("Remove agent %q (%s)?", a.Name, a.FilePath))
+		if err != nil {
+			return err
+		}
 	}
 	if !ok {
 		fmt.Printf("%s\n", auditTint("Cancelled.", textMuted))

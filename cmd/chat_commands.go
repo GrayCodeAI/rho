@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -11,7 +12,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	commandfeature "github.com/GrayCodeAI/rho/internal/features/commands"
+	parallelfeature "github.com/GrayCodeAI/rho/internal/features/parallel"
 	"github.com/GrayCodeAI/rho/internal/multiagent/parallel"
+	"github.com/GrayCodeAI/rho/internal/plugin"
 	"github.com/GrayCodeAI/rho/internal/ui/icons"
 )
 
@@ -22,16 +26,59 @@ var (
 	slashCmdMutex      sync.Mutex
 )
 
-// slashCommands returns the list of all slash commands, built once and cached.
+// slashCommands returns the static slash-command list. Runtime plugin commands
+// are added by slashCommandsFor so the cache cannot become stale when plugins
+// load or reload during a session.
 func slashCommands() []string {
-	slashCmdMutex.Lock()
-	defer slashCmdMutex.Unlock()
-	if slashCmdCacheBuilt {
-		return slashCmdCache
-	}
+	return slashCommandsFor(nil)
+}
 
-	seen := make(map[string]bool, len(allSlashCommands)+subcommandRegistry.Size())
-	out := make([]string, 0, len(allSlashCommands)+subcommandRegistry.Size())
+func slashCommandsFor(runtime *plugin.Runtime) []string {
+	slashCmdMutex.Lock()
+	if !slashCmdCacheBuilt {
+		builtIns := commandfeature.BuiltInNames()
+		seen := make(map[string]bool, len(builtIns)+subcommandRegistry.Size())
+		out := make([]string, 0, len(builtIns)+subcommandRegistry.Size())
+		add := func(name string) {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return
+			}
+			if !strings.HasPrefix(name, "/") {
+				name = "/" + name
+			}
+			if seen[name] {
+				return
+			}
+			seen[name] = true
+			out = append(out, name)
+		}
+		for _, name := range builtIns {
+			add(name)
+		}
+		for alias := range commandfeature.BuiltInAliases() {
+			add(alias)
+		}
+		for _, cmd := range subcommandRegistry.All() {
+			add(cmd.Name())
+			for _, alias := range cmd.Aliases() {
+				add(alias)
+			}
+		}
+		sort.Strings(out)
+		slashCmdCache = out
+		slashCmdCacheBuilt = true
+	}
+	static := append([]string(nil), slashCmdCache...)
+	slashCmdMutex.Unlock()
+
+	if runtime == nil {
+		return static
+	}
+	seen := make(map[string]struct{}, len(static))
+	for _, name := range static {
+		seen[name] = struct{}{}
+	}
 	add := func(name string) {
 		name = strings.TrimSpace(name)
 		if name == "" {
@@ -40,48 +87,37 @@ func slashCommands() []string {
 		if !strings.HasPrefix(name, "/") {
 			name = "/" + name
 		}
-		if seen[name] {
+		if _, exists := seen[name]; exists {
 			return
 		}
-		seen[name] = true
-		out = append(out, name)
+		seen[name] = struct{}{}
+		static = append(static, name)
 	}
-	for _, name := range allSlashCommands {
-		add(name)
+	for _, cmd := range runtime.CommandList() {
+		add(cmd.Name)
 	}
-	for _, cmd := range subcommandRegistry.All() {
-		add(cmd.Name())
-		for _, alias := range cmd.Aliases() {
-			add(alias)
+	sort.Strings(static)
+	return static
+}
+
+func slashDescriptionsFor(runtime *plugin.Runtime) map[string]string {
+	descriptions := make(map[string]string, len(slashDescriptions))
+	for name, description := range slashDescriptions {
+		descriptions[name] = description
+	}
+	if runtime != nil {
+		for _, cmd := range runtime.CommandList() {
+			name := strings.TrimSpace(cmd.Name)
+			if name == "" {
+				continue
+			}
+			if !strings.HasPrefix(name, "/") {
+				name = "/" + name
+			}
+			descriptions[name] = cmd.Description
 		}
 	}
-	sort.Strings(out)
-	slashCmdCache = out
-	slashCmdCacheBuilt = true
-	return out
-}
-
-// ResetSlashCache resets the cached slash commands (useful for testing)
-func ResetSlashCache() {
-	slashCmdMutex.Lock()
-	defer slashCmdMutex.Unlock()
-	slashCmdCacheBuilt = false
-	slashCmdCache = nil
-}
-
-var allSlashCommands = []string{
-	"/add", "/add-dir", "/agents", "/agents-init", "/audit", "/auto-commit", "/autonomy", "/branch", "/branch-agent", "/branches", "/bughunter", "/clean", "/clear",
-	"/check", "/color", "/commit", "/compact", "/compress", "/config", "/context", "/council", "/design",
-	"/copy", "/cost", "/cron", "/ctx", "/diff", "/doctor", "/drop", "/effort", "/env", "/exit", "/explain",
-	"/export", "/fast", "/feedback", "/files", "/focus", "/follow", "/fork", "/help", "/history", "/home", "/hooks", "/init",
-	"/integrity", "/keybindings", "/learn", "/lint", "/login", "/loop", "/mcp", "/memory", "/metrics", "/model", "/new",
-	"/hunt", "/insights", "/mode", "/output-style", "/party", "/pin", "/plugin", "/plugins",
-	"/power", "/pr-comments", "/provider-status", "/quit", "/recipe", "/recover", "/reflect", "/refresh-model-catalog", "/release-notes",
-	"/image", "/reload-plugins", "/remote-env", "/rename", "/render", "/research", "/resume", "/retry", "/review", "/rewind",
-	"/run", "/btw", "/brainstorm", "/checkpoint", "/dream", "/away", "/investigate", "/search", "/security-review", "/session", "/share", "/skills", "/snapshot", "/soul", "/spec", "/stale", "/stats",
-	"/mouse", "/select", "/start", "/status", "/statusline", "/summary", "/tag", "/taste", "/tasks", "/test", "/theme", "/think", "/thinkback", "/thinkback-play", "/tokens", "/tools", "/trust", "/ultrareview", "/undo", "/upgrade", "/usage",
-	"/version", "/vibe", "/vim", "/voice", "/welcome", "/ecosystem", "/path",
-	"/scroll-speed", "/scroll-invert", "/scroll-mode", "/terminal-setup", "/pager-config", "/prompt-queue",
+	return descriptions
 }
 
 func (m *chatModel) slashSuggestionsFor(input string) []string {
@@ -90,7 +126,7 @@ func (m *chatModel) slashSuggestionsFor(input string) []string {
 	}
 	m.slashSugInput = input
 	m.slashSugCachedGen = m.slashSugGen
-	m.slashSugCache = slashSuggestions(input)
+	m.slashSugCache = slashSuggestionsFor(input, m.pluginRuntime)
 	return m.slashSugCache
 }
 
@@ -160,225 +196,32 @@ func (m *chatModel) syncInputLayout() bool {
 }
 
 func slashAliases() map[string]string {
-	return map[string]string{
-		"/themes": "/theme",
-	}
+	return commandfeature.BuiltInAliases()
 }
 
-// #nosec G101 -- command descriptions are static UI strings, not credentials.
-var slashDescriptions = map[string]string{
-	"/add":                   "Add files to conversation context",
-	"/add-dir":               "Add a directory to context",
-	"/agents":                "List active agents",
-	"/agents-init":           "Generate AGENTS.md from project template",
-	"/audit":                 "Show tool audit summary",
-	"/autonomy":              "Autonomy Center for trust tier and rules",
-	"/branch":                "Show git branch info",
-	"/btw":                   "Side note without triggering a response",
-	"/bughunter":             "Hunt for bugs in the codebase",
-	"/check":                 "Review diff, find issues, auto-fix safe ones, verify before ship",
-	"/design":                "Build or improve UI — use /design screenshot|system|component|regress for advanced modes",
-	"/hunt":                  "Diagnose root cause of errors before fixing (Waza method)",
-	"/think":                 "Turn rough idea into approved plan before coding (Waza method)",
-	"/clean":                 "Delete old sessions",
-	"/clear":                 "Clear conversation",
-	"/color":                 "Change agent color",
-	"/commit":                "Auto-commit changes with AI message",
-	"/compact":               "Compress conversation to save tokens",
-	"/compress":              "Compress old sessions",
-	"/config":                "Open settings panel",
-	"/context":               "Show current context",
-	"/copy":                  "Copy chat or input to clipboard (/copy all|input|last|assistant)",
-	"/cost":                  "Show token usage and cost",
-	"/council":               "Run LLM Council (multi-model consensus)",
-	"/diff":                  "Show git diff (preview changes)",
-	"/doctor":                "Run diagnostics (build, test, lint)",
-	"/drop":                  "Remove file from context",
-	"/effort":                "Set reasoning effort level",
-	"/env":                   "Show environment info",
-	"/exit":                  "Save and exit",
-	"/explain":               "Swift code back to the commit that created it",
-	"/export":                "Export session",
-	"/follow":                "Toggle stream follow (auto-scroll)",
-	"/home":                  "Jump to top of chat and welcome header",
-	"/feedback":              "Submit feedback about rho",
-	"/fast":                  "Toggle fast mode",
-	"/files":                 "Show modified files",
-	"/focus":                 "Narrow agent attention to specific files/dirs",
-	"/fork":                  "Fork conversation to try a different approach",
-	"/branches":              "List or switch conversation branches",
-	"/help":                  "Show all commands",
-	"/history":               "List saved sessions",
-	"/hooks":                 "Show configured hooks",
-	"/init":                  "Analyze project structure",
-	"/integrity":             "Validate session integrity",
-	"/lint":                  "Run linter, add issues to context",
-	"/login":                 "Authenticate a provider (opens the config panel)",
-	"/loop":                  "Schedule recurring command",
-	"/mcp":                   "Show MCP server status",
-	"/memory":                "Show AGENTS.md project instructions",
-	"/metrics":               "Show session metrics",
-	"/model":                 "Browse/switch models; press t to toggle Think",
-	"/new":                   "Start a fresh session",
-	"/pin":                   "Pin last N messages to protect from compaction",
-	"/parallel":              "Run N agents in parallel on independent tasks",
-	"/plugins":               "List installed plugins",
-	"/power":                 "Set power level (1-10)",
-	"/quit":                  "Save and exit",
-	"/recover":               "Scan for interrupted sessions and resume",
-	"/refactor":              "Agent-driven refactoring: dedup, dead code, lint fixes",
-	"/resume":                "Resume a saved session",
-	"/retry":                 "Redo last message",
-	"/review":                "Code review for bugs and issues",
-	"/rewind":                "Undo last exchange",
-	"/run":                   "Run command, add output to context",
-	"/search":                "Search across sessions",
-	"/select":                "Pause TUI for native text selection",
-	"/mouse":                 "Toggle TUI mouse capture for native click-drag copy",
-	"/snapshot":              "Manage file snapshots: list, restore <hash>, diff <hash>",
-	"/stale":                 "Show stale rules that may need updating or removal",
-	"/security-review":       "Security audit",
-	"/skills":                "List skills or manage: search, install, trending, info, remove, update, feedback, publish, audit",
-	"/learn":                 "LLM-powered skill advisor (/learn deep for source analysis)",
-	"/stats":                 "Show analytics stats",
-	"/status":                "Show session info (mode, trust, cost)",
-	"/start":                 "Guided setup: trust, mode, branch, first tasks",
-	"/trust":                 "Folder trust status / add / remove",
-	"/branch-agent":          "Create rho/agent-* branch if on main/master",
-	"/auto-commit":           "Toggle git auto-commit after Write/Edit (on|off)",
-	"/summary":               "Summarize the session",
-	"/tasks":                 "Show task list",
-	"/test":                  "Run tests, add failures to context",
-	"/tokens":                "Show token estimate",
-	"/tools":                 "List enabled tools",
-	"/undo":                  "Undo the most recent file change",
-	"/usage":                 "Show cost summary",
-	"/version":               "Show rho version",
-	"/vim":                   "Toggle vim mode",
-	"/welcome":               "Re-print the welcome header",
-	"/ecosystem":             "Show flux and token-engine integration status",
-	"/path":                  "Developer path readiness (setup, security)",
-	"/cron":                  "Show scheduled jobs",
-	"/keybindings":           "Show keyboard shortcuts",
-	"/output-style":          "Change output style",
-	"/plugin":                "Manage plugins",
-	"/pr-comments":           "Address PR comments",
-	"/provider-status":       "Show provider info",
-	"/release-notes":         "Draft release notes",
-	"/reload-plugins":        "Reload all plugins",
-	"/remote-env":            "Show remote environment",
-	"/rename":                "Rename current session",
-	"/render":                "Export repo as CXML to clipboard",
-	"/research":              "Start autonomous research loop",
-	"/session":               "Show session info",
-	"/share":                 "Share session",
-	"/statusline":            "Show status line info",
-	"/tag":                   "Tag current session",
-	"/taste":                 "Show learned taste preferences",
-	"/theme":                 "Change visual theme (opens picker)",
-	"/themes":                "List all available themes",
-	"/think-back":            "Review reasoning decisions",
-	"/thinkback":             "Review reasoning decisions",
-	"/thinkback-play":        "Replay reasoning path",
-	"/upgrade":               "Check for updates",
-	"/vibe":                  "Start vibe coding loop",
-	"/voice":                 "Toggle voice input",
-	"/ctx":                   "Show conversation context visualization",
-	"/insights":              "Generate session patterns and improvements report",
-	"/spec":                  "Start the spec-driven workflow (gates Write/Edit/Bash until approved)",
-	"/ultrareview":           "Deep adversarial code review",
-	"/scroll-speed":          "Set scroll speed (1-100)",
-	"/scroll-invert":         "Toggle scroll direction inversion",
-	"/scroll-mode":           "Switch scroll behavior mode",
-	"/terminal-setup":        "Configure terminal capabilities",
-	"/pager-config":          "Configure pager for long output",
-	"/prompt-queue":          "Manage queued prompts",
-	"/brainstorm":            "Brainstorm ideas with multi-model council",
-	"/checkpoint":            "Create a named checkpoint of current state",
-	"/dream":                 "Enter dream/imagining mode for creative tasks",
-	"/away":                  "Set away status with auto-reply message",
-	"/investigate":           "Deep-dive investigation of an issue",
-	"/refresh-model-catalog": "Refresh the model catalog from providers",
-	"/image":                 "Generate or process images",
-	"/recipe":                "Run a saved recipe (command template)",
-	"/soul":                  "Show or update rho's personality/soul",
-	"/mode":                  "Switch interaction mode",
-	"/party":                 "Start a multi-agent party session",
-}
+var slashDescriptions = commandfeature.BuiltInDescriptions()
 
 func slashSuggestions(input string) []string {
-	v := strings.TrimSpace(input)
-	if !strings.HasPrefix(v, "/") || strings.Contains(v, " ") {
-		return nil
-	}
-	v = strings.ToLower(v)
-	var out []string
-	seen := map[string]bool{}
-	for _, c := range slashCommands() {
-		c = strings.ToLower(c)
-		if strings.HasPrefix(c, v) {
-			seen[c] = true
-			desc := slashDescriptions[c]
-			if desc != "" {
-				out = append(out, c+"  "+desc)
-			} else {
-				out = append(out, c)
-			}
-		}
-	}
-	aliases := slashAliases()
-	aliasNames := make([]string, 0, len(aliases))
-	for alias := range aliases {
-		aliasNames = append(aliasNames, alias)
-	}
-	sort.Strings(aliasNames)
-	for _, alias := range aliasNames {
-		target := aliases[alias]
-		alias = strings.ToLower(alias)
-		if strings.HasPrefix(alias, v) && !seen[target] {
-			seen[alias] = true
-			out = append(out, alias+" → "+target)
-		}
-	}
-	if len(out) == 1 && strings.HasPrefix(out[0], v+" ") && strings.Fields(out[0])[0] == v {
-		return nil
-	}
-	return out
+	return slashSuggestionsFor(input, nil)
+}
+
+func slashSuggestionsFor(input string, runtime *plugin.Runtime) []string {
+	return commandfeature.Suggestions(input, slashCommandsFor(runtime), slashDescriptionsFor(runtime), slashAliases())
 }
 
 func applySlashSuggestion(input string) string {
-	choice := strings.TrimSpace(input)
-	if before, _, ok := strings.Cut(choice, " → "); ok {
-		choice = before
-	}
-	parts := strings.Fields(choice)
-	if len(parts) > 0 {
-		choice = parts[0]
-	}
-	if target, ok := slashAliases()[choice]; ok {
-		choice = target
-	}
-	return choice + " "
+	return commandfeature.ApplySuggestion(input, slashAliases())
 }
 
 func (m *chatModel) handleCommand(text string) (tea.Model, tea.Cmd) {
-	trimmed := strings.TrimSpace(text)
-	lower := strings.ToLower(trimmed)
-	if lower == "?" || lower == "? help" || lower == "?help" || lower == "help" {
-		text = "/help"
-	} else if strings.HasPrefix(lower, "? ") {
-		text = "/help " + strings.TrimPrefix(trimmed, "? ")
-	}
-
-	parts := strings.Fields(text)
+	parsed := commandfeature.Parse(text)
+	resolved := commandfeature.Resolve(parsed, slashAliases())
+	text = resolved.Parsed.Text
+	parts := resolved.Parsed.Parts
 	if len(parts) == 0 {
 		return m, nil
 	}
-	rawCmd := parts[0]
-	cmd := rawCmd
-	if strings.HasPrefix(cmd, "/") {
-		cmd = strings.ToLower(cmd)
-	}
+	cmd := resolved.Command
 
 	// Track the last command for context-aware tips and recent-command history.
 	if strings.HasPrefix(cmd, "/") {
@@ -387,7 +230,7 @@ func (m *chatModel) handleCommand(text string) (tea.Model, tea.Cmd) {
 	}
 
 	// Namespaced skill invocation: /vendor:skill-name [args...]
-	if strings.Contains(cmd, ":") && strings.HasPrefix(cmd, "/") {
+	if resolved.Namespaced {
 		return m.handleNamespacedSkill(cmd, text)
 	}
 
@@ -395,12 +238,8 @@ func (m *chatModel) handleCommand(text string) (tea.Model, tea.Cmd) {
 	// chat_subcommand_<name>.go files. Each registers itself in
 	// init(); we look up by the slash name minus the leading "/".
 	// If the registry has a handler, dispatch and return.
-	if strings.HasPrefix(cmd, "/") {
-		if aliasTarget, ok := slashAliases()[cmd]; ok {
-			cmd = aliasTarget
-		}
-		name := strings.TrimPrefix(cmd, "/")
-		if sub, ok := subcommandRegistry.Lookup(name); ok {
+	if resolved.IsSlash {
+		if sub, ok := subcommandRegistry.Lookup(resolved.Name); ok {
 			args := parts[1:]
 			return sub.Handle(m, args, text)
 		}
@@ -418,7 +257,7 @@ func (m *chatModel) handleCommand(text string) (tea.Model, tea.Cmd) {
 	}
 	// "Did you mean?" — fuzzy-match against known slash commands so a typo
 	// like /commmit suggests /commit instead of just saying "unknown".
-	suggestion := suggestCommand(cmd)
+	suggestion := suggestCommandFor(cmd, m.pluginRuntime)
 	if suggestion != "" {
 		m.messages = append(m.messages, displayMsg{role: "error", content: fmt.Sprintf("Unknown command: %s — did you mean %s?\nType /help for all commands.", cmd, suggestion)})
 	} else {
@@ -427,108 +266,25 @@ func (m *chatModel) handleCommand(text string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// suggestCommand finds the closest known slash command to a mistyped one
-// using edit distance (Levenshtein). Returns the best match if it is within
-// a plausible typo threshold, or "" if nothing is close enough to recommend.
-func suggestCommand(typo string) string {
-	if len(typo) < 2 {
-		return ""
-	}
-	clean := strings.ToLower(strings.TrimPrefix(typo, "/"))
-	if clean == "" {
-		return ""
-	}
-	best := ""
-	bestDist := 999
-	for _, cmd := range slashCommands() {
-		target := strings.ToLower(strings.TrimPrefix(cmd, "/"))
-		d := levenshtein(clean, target)
-		if d < bestDist {
-			bestDist = d
-			best = cmd
-		}
-	}
-	if best == "" {
-		return ""
-	}
-	// Threshold: distance must be small relative to the command length.
-	// Allows 1 edit for short commands (<=5 chars), 2 for longer ones.
-	target := strings.ToLower(strings.TrimPrefix(best, "/"))
-	maxDist := 1
-	if len(target) > 5 {
-		maxDist = 2
-	}
-	// Never suggest when the input is longer than the target by more than
-	// maxDist — that's not a typo, it's a different word.
-	if len(clean) > len(target)+maxDist {
-		return ""
-	}
-	if bestDist <= maxDist && bestDist > 0 {
-		return best
-	}
-	return ""
-}
-
-// levenshtein computes the edit distance between two strings using the
-// classic Wagner–Fischer algorithm with O(min(m,n)) space.
-func levenshtein(a, b string) int {
-	if a == b {
-		return 0
-	}
-	if len(a) == 0 {
-		return len(b)
-	}
-	if len(b) == 0 {
-		return len(a)
-	}
-	// Ensure b is the shorter string for O(min(m,n)) space.
-	if len(b) > len(a) {
-		a, b = b, a
-	}
-	prev := make([]int, len(b)+1)
-	curr := make([]int, len(b)+1)
-	for j := 0; j <= len(b); j++ {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		curr[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			curr[j] = min(prev[j]+1, min(curr[j-1]+1, prev[j-1]+cost))
-		}
-		prev, curr = curr, prev
-	}
-	return prev[len(b)]
+func suggestCommandFor(typo string, runtime *plugin.Runtime) string {
+	return commandfeature.SuggestTypo(typo, slashCommandsFor(runtime))
 }
 
 // handleParallelCommand spawns multiple agents in parallel on independent tasks.
 // Usage: /parallel <N> <task1> | <task2> | ...
 func (m *chatModel) handleParallelCommand(parts []string, text string) (tea.Model, tea.Cmd) {
-	if len(parts) < 3 {
-		m.messages = append(m.messages, displayMsg{role: "system", content: "Usage: /parallel <N> <task1> | <task2> | ...\nExample: /parallel 3 Fix auth bug | Add logging | Update tests"})
+	request, err := parallelfeature.ParseRequest(parts)
+	if err != nil {
+		role := "error"
+		var parseErr *parallelfeature.ParseError
+		if errors.As(err, &parseErr) && parseErr.Usage {
+			role = "system"
+		}
+		m.messages = append(m.messages, displayMsg{role: role, content: err.Error()})
 		return m, nil
 	}
-
-	// Parse worker count
-	var workers int
-	if _, err := fmt.Sscanf(parts[1], "%d", &workers); err != nil || workers < 1 || workers > 8 {
-		m.messages = append(m.messages, displayMsg{role: "error", content: "Worker count must be 1-8"})
-		return m, nil
-	}
-
-	// Parse tasks (separated by |)
-	taskStr := strings.Join(parts[2:], " ")
-	taskDescs := strings.Split(taskStr, "|")
-	for i := range taskDescs {
-		taskDescs[i] = strings.TrimSpace(taskDescs[i])
-	}
-	if len(taskDescs) < 2 {
-		m.messages = append(m.messages, displayMsg{role: "error", content: "Need at least 2 tasks separated by |"})
-		return m, nil
-	}
+	workers := request.Workers
+	taskDescs := request.Tasks
 
 	// Get repo root for worktree pool
 	cwd, _ := os.Getwd()

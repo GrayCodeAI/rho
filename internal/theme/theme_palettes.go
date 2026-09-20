@@ -5,6 +5,8 @@
 
 package theme
 
+import "strings"
+
 // darkPalette is the default dark theme with Rho's Talon Gold accent.
 var darkPalette = Palette{
 	Panel:     "#1b1e26",
@@ -325,7 +327,7 @@ var lightPalette = Palette{
 	Muted:     "#4b5149",
 	Faint:     "#575e55",
 	Faintest:  "#636a61",
-	Accent:    "#54700a",
+	Accent:    "#4b6508",
 	Green:     "#1e725c",
 	Red:       "#c02434",
 	Amber:     "#8a5f00",
@@ -532,6 +534,39 @@ var githubDarkPalette = Palette{
 	CardPerm:  "#5a4a10",
 }
 
+// githubLightPalette — GitHub's light theme palette, tuned for terminal
+// contrast rather than browser white-space. It complements github-dark while
+// keeping the same semantic colors for diffs, errors, and permissions.
+var githubLightPalette = Palette{
+	Panel:     "#ffffff",
+	PromptBg:  "#f6f8fa",
+	Line:      "#d0d7de",
+	Line2:     "#afb8c1",
+	Ink:       "#1f2328",
+	Muted:     "#656d76",
+	Faint:     "#818b98",
+	Faintest:  "#8c959f",
+	Accent:    "#0757b8",
+	Green:     "#1a7f37",
+	Red:       "#cf222e",
+	Amber:     "#9a6700",
+	Blue:      "#0550ae",
+	GitAdd:    "#1a7f37",
+	GitDel:    "#cf222e",
+	AddBg:     "#dafbe1",
+	DelBg:     "#ffebe9",
+	AddBgWord: "#aceebb",
+	DelBgWord: "#ffcecb",
+	PermBg:    "#fff8c5",
+	SelBg:     "#ddf4ff",
+	AddInk:    "#116329",
+	DelInk:    "#82071e",
+	OnAccent:  "#ffffff",
+	CardRun:   "#b6d7f5",
+	CardErr:   "#f2b8b5",
+	CardPerm:  "#ead79b",
+}
+
 // minimalPalette is a low-visual-noise palette for users who prefer a near-
 // unstyled terminal experience. Colors stay close to terminal defaults with
 // minimal contrast, reducing visual clutter while remaining readable.
@@ -623,6 +658,7 @@ var themeRegistry = []themeEntry{
 	{Name: "ayu", Label: "Ayu Mirage", Palette: ayuPalette, IsDark: true},
 	{Name: "palenight", Label: "Palenight", Palette: paleNightPalette, IsDark: true},
 	{Name: "github-dark", Label: "GitHub Dark", Palette: githubDarkPalette, IsDark: true},
+	{Name: "github-light", Label: "GitHub Light", Palette: githubLightPalette, IsDark: false},
 	{Name: "light", Label: "Light", Palette: lightPalette, IsDark: false},
 	{Name: "solarized-light", Label: "Solarized Light", Palette: solarizedLightPalette, IsDark: false},
 	{Name: "minimal", Label: "Minimal", Palette: minimalPalette, IsDark: true},
@@ -641,7 +677,13 @@ var themeByName = func() map[string]themeEntry {
 
 // ThemeByName returns the map of all theme entries by name.
 func ThemeByName() map[string]themeEntry {
-	return themeByName
+	// Do not expose the registry's mutable backing map. A caller that edits the
+	// returned map must not silently change the theme picker for every session.
+	returnMap := make(map[string]themeEntry, len(themeByName))
+	for name, entry := range themeByName {
+		returnMap[name] = entry
+	}
+	return returnMap
 }
 
 // GetThemeEntry returns a theme entry by name.
@@ -649,9 +691,10 @@ func GetThemeEntry(name string) themeEntry {
 	return themeByName[name]
 }
 
-// LookupTheme resolves a theme name (case/space-insensitive) to its entry.
+// LookupTheme resolves a theme name case- and space-insensitively.
 func LookupTheme(name string) (themeEntry, bool) {
-	entry, ok := themeByName[name]
+	key := strings.ToLower(strings.TrimSpace(name))
+	entry, ok := themeByName[key]
 	return entry, ok
 }
 

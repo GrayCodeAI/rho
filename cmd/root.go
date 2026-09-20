@@ -59,7 +59,6 @@ var (
 	repoMapFlag                bool
 	mapTokensFlag              int
 	replFlag                   bool
-	vibeMode                   bool
 	powerLevel                 int
 	timeout                    time.Duration
 	councilMode                bool
@@ -207,12 +206,15 @@ Run rho and use /config to set up your first provider.`, registeredProviderCount
 			return err
 		}
 
-		// Folder trust check — block starting CLI in an untrusted directory
-		if tr := engine.ProjectTrust(""); tr.Blocked {
-			return fmt.Errorf("cannot start CLI: folder not trusted (%s)\nProject-scoped hooks, MCP servers, and custom specialists are blocked.\nRun 'rho trust add' to trust this folder before starting rho", tr.Path)
+		// Launch the TUI even when the folder is untrusted. Project-scoped hooks,
+		// MCP servers, and specialists remain blocked by their own trust gates;
+		// refusing to open the chat makes the security control look like a broken
+		// CLI instead of a clearly visible restricted mode.
+		if tr := engine.ProjectTrust(""); tr.Blocked && isInteractiveTerminal() {
+			promptForInteractiveFolderTrust(os.Stdin, os.Stderr, tr, func() error {
+				return engine.TrustProject("", "user approved at interactive startup")
+			})
 		}
-
-		// Launch TUI — use /config to set API keys; flux supplies providers and models
 		return runChat()
 	},
 }
@@ -251,7 +253,6 @@ func init() {
 	rootCmd.Flags().IntVar(&mapTokensFlag, "map-tokens", 1024, "token budget for the --repo-map overview")
 	rootCmd.Flags().BoolVar(&replFlag, "repl", false, "start interactive REPL mode (like aider) for multi-turn conversation without TUI")
 	rootCmd.Flags().StringVar(&recordPath, "record", "", "record interactive REPL output to an fxtape file (fx --record parity)")
-	rootCmd.Flags().BoolVar(&vibeMode, "vibe", false, "vibe coding mode: auto-apply, auto-run, no confirmations")
 	rootCmd.Flags().IntVar(&powerLevel, "power", 5, "power level 1-10 (auto-configures model, context, review depth)")
 	rootCmd.Flags().DurationVar(&timeout, "timeout", 0, "time budget for the operation (e.g., 2m, 5m, 1h)")
 	rootCmd.Flags().BoolVar(&councilMode, "council", false, "consult multiple models and synthesize best answer")
@@ -286,7 +287,6 @@ func init() {
 	rootCmd.AddCommand(cmdHistoryCmd)
 	rootCmd.AddCommand(planCmd)
 	rootCmd.AddCommand(rulesCmd)
-	rootCmd.AddCommand(sandboxCmd)
 	rootCmd.AddCommand(costCmd)
 	rootCmd.AddCommand(featuresCmd)
 	rootCmd.AddCommand(execCmd)
@@ -402,7 +402,7 @@ func groupRootCommands() {
 		"manpage":    groupReference,
 		"update":     groupReference,
 		"feedback":   groupReference,
-		"sandbox":    groupReference,
+		"changes":    groupReference,
 		"graph":      groupReference,
 		"history":    groupReference,
 		"research":   groupReference,
@@ -1064,6 +1064,9 @@ func applyCwdFlag() error {
 }
 
 func Execute() error {
+	if err := validateChatCommandComposition(); err != nil {
+		return fmt.Errorf("invalid slash-command composition: %w", err)
+	}
 	// Cobra defaults command output to stderr when no writer is configured.
 	// The process entrypoint must make stdout/stderr semantics explicit so
 	// scripts can safely pipe data and diagnostics never corrupt structured

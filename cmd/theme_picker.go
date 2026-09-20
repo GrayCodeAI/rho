@@ -7,14 +7,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
-	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
 	internaltheme "github.com/GrayCodeAI/rho/internal/theme"
 )
 
 // detectAutoIsDark returns whether "auto" theme currently resolves to dark.
 func detectAutoIsDark() bool {
-	settings := rhoconfig.LoadGlobalSettings()
-	return settings.Theme == "auto" || settings.Theme == "system" || internaltheme.DetectOSTheme() != "light"
+	return internaltheme.ApplyThemePreference("auto") != "light"
 }
 
 // ThemeChoice represents a visual theme option.
@@ -59,6 +57,18 @@ type ThemePicker struct {
 	sel     int
 }
 
+// ensureEntries keeps the exported picker safe to use as a zero value. The
+// normal constructor populates entries, but overlays are also assembled by
+// tests and integrations without requiring a constructor call.
+func (tp *ThemePicker) ensureEntries() {
+	if len(tp.entries) == 0 {
+		tp.entries = buildThemeChoices()
+	}
+	if tp.sel < 0 || tp.sel >= len(tp.entries) {
+		tp.sel = 0
+	}
+}
+
 // NewThemePicker creates a new theme picker backed by the internal registry.
 func NewThemePicker() *ThemePicker {
 	return &ThemePicker{
@@ -68,12 +78,14 @@ func NewThemePicker() *ThemePicker {
 
 // Open opens the picker, pre-selecting the given theme name (defaults to 0).
 func (tp *ThemePicker) Open() {
+	tp.ensureEntries()
 	tp.open = true
 	tp.sel = 0
 }
 
 // OpenWithCurrent opens the picker pre-selecting the currently active theme.
 func (tp *ThemePicker) OpenWithCurrent(current string) {
+	tp.ensureEntries()
 	tp.open = true
 	tp.sel = 0
 	for i, e := range tp.entries {
@@ -108,6 +120,7 @@ func (tp *ThemePicker) Update(msg tea.KeyMsg) (*ThemeChoice, bool) {
 	if !tp.open {
 		return nil, false
 	}
+	tp.ensureEntries()
 
 	switch key := msg.Key(); key.Code {
 	case tea.KeyEsc:
@@ -150,15 +163,17 @@ func (tp *ThemePicker) View() tea.View {
 	if !tp.open {
 		return tea.NewView("")
 	}
+	tp.ensureEntries()
+	palette := themePickerPalette(tp.entries[tp.sel].Name)
 
 	titleStyle := lipgloss.NewStyle().
 		Background(rhoColor).
-		Foreground(lipgloss.Color("#FFFFFF")).
+		Foreground(lipgloss.Color(palette.OnAccent)).
 		Bold(true).
 		Padding(0, 1)
 
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666666"))
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Faintest))
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(" Select Theme ") + "\n")
@@ -166,11 +181,11 @@ func (tp *ThemePicker) View() tea.View {
 
 	for i, e := range tp.entries {
 		if i == tp.sel {
-			rowStyle := lipgloss.NewStyle().Foreground(rhoColor).Bold(true)
+			rowStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Accent)).Bold(true)
 			b.WriteString(fmt.Sprintf("  ▶ %s\n", rowStyle.Render(e.Name)))
-			b.WriteString(fmt.Sprintf("    %s\n", lipgloss.NewStyle().Foreground(rhoColor).Render(e.Desc)))
+			b.WriteString(fmt.Sprintf("    %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Accent)).Render(e.Desc)))
 		} else {
-			nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#D0D0D0"))
+			nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Ink))
 			b.WriteString(fmt.Sprintf("    %s\n", nameStyle.Render(e.Name)))
 			b.WriteString(fmt.Sprintf("    %s\n", dimStyle.Render(e.Desc)))
 		}
@@ -186,13 +201,32 @@ func (tp *ThemePicker) View() tea.View {
 	return v
 }
 
+func themePickerPalette(name string) internaltheme.Palette {
+	if name == "auto" {
+		if detectAutoIsDark() {
+			name = "dark"
+		} else {
+			name = "light"
+		}
+	}
+	if entry, ok := internaltheme.LookupTheme(name); ok {
+		return entry.Palette
+	}
+	return internaltheme.GetThemeEntry("dark").Palette
+}
+
 // renderThemePreview renders a visual preview of the selected theme.
 func renderThemePreview(themeName string) string {
 	var preview strings.Builder
 
 	// Handle auto theme specially
 	if themeName == "auto" {
-		preview.WriteString(fmt.Sprintf("  Panel:   %s dark\n", lipgloss.NewStyle().Background(lipgloss.Color("#1b1e26")).Render("    ")))
+		p := themePickerPalette(themeName)
+		appearance := "light"
+		if detectAutoIsDark() {
+			appearance = "dark"
+		}
+		preview.WriteString(fmt.Sprintf("  Panel:   %s %s\n", lipgloss.NewStyle().Background(lipgloss.Color(p.Panel)).Render("    "), appearance))
 		preview.WriteString(fmt.Sprintf("  Brand:   %s Talon Gold\n", lipgloss.NewStyle().Background(lipgloss.Color(internaltheme.BrandPrimary)).Render("    ")))
 		return preview.String()
 	}

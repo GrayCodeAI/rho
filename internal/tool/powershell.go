@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -47,6 +48,26 @@ func (PowerShellTool) Parameters() map[string]interface{} {
 // powershellSchema is the single source of truth for PowerShell's input schema.
 var powershellSchema = PowerShellTool{}.Schema()
 
+var (
+	powershellDestructiveRe = regexp.MustCompile(`(?i)(?:^|[\s;&|])(?:remove-item|ri|del|erase|rd|rmdir|clear-content|clear-item|format-volume|clear-disk|stop-computer|restart-computer)\b`)
+	powershellSuspiciousRe  = regexp.MustCompile(`(?i)(?:^|[;&|])\s*(?:iex|invoke-expression)\b|\b(?:invoke-webrequest|iwr|invoke-restmethod|irm|start-bitstransfer|set-executionpolicy)\b|\b(?:start-process|saps)\b[^\n;&|]*-verb\s+runas\b`)
+)
+
+// IsPowerShellDestructive reports PowerShell cmdlets that delete data, alter
+// storage, or stop/restart the host. These are hard-denied independently of
+// autonomy and remembered approvals.
+func IsPowerShellDestructive(command string) bool {
+	return powershellDestructiveRe.MatchString(command)
+}
+
+// IsPowerShellSuspicious identifies PowerShell constructs that are not covered
+// by Bash's command heuristics. These constructs can evaluate arbitrary code,
+// fetch remote content, alter execution policy, or elevate a child process.
+// Keep this classifier shared by the policy layer and the executor.
+func IsPowerShellSuspicious(command string) bool {
+	return IsPowerShellDestructive(command) || powershellSuspiciousRe.MatchString(command)
+}
+
 func (PowerShellTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	p, err := DecodeInput[PowerShellInput]("PowerShell", input)
 	if err != nil {
@@ -56,10 +77,10 @@ func (PowerShellTool) Execute(ctx context.Context, input json.RawMessage) (strin
 		return "", fmt.Errorf("command is required")
 	}
 	// Safety: check for destructive commands (same as Bash tool)
-	if IsDestructiveCommand(p.Command) {
+	if IsDestructiveCommand(p.Command) || IsPowerShellDestructive(p.Command) {
 		return "", fmt.Errorf("command blocked: contains a destructive pattern")
 	}
-	if IsSuspicious(p.Command) {
+	if IsSuspicious(p.Command) || IsPowerShellSuspicious(p.Command) {
 		return "", fmt.Errorf("command blocked: flagged as suspicious")
 	}
 

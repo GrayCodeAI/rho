@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/GrayCodeAI/rho/internal/feature"
+	feature "github.com/GrayCodeAI/rho/internal/features"
 	"github.com/spf13/cobra"
 )
 

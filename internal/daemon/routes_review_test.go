@@ -119,7 +119,7 @@ func TestDaemon_ReviewStatus(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// `rho review status` shells out to the rho binary; in a sandboxed
+	// `rho review status` shells out to the rho binary; in a restricted
 	// test environment that command may not resolve, so the handler's own
 	// 500 branch is just as valid an outcome as a real 200 — both are
 	// well-defined, deterministic behavior we can assert on.

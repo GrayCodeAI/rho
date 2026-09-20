@@ -20,7 +20,7 @@ type autonomyPickerEntry struct {
 
 // allAutonomyTiers lists every tier in strictness order (most to least
 // cautious), for the picker only. This is intentionally separate from
-// containerAutonomyTiers (the Ctrl+L cycle), which deliberately excludes
+// autonomyTiers (the Ctrl+L cycle), which deliberately excludes
 // Supervised so repeated key-presses can't land you in max-friction mode by
 // accident — the picker is a deliberate selection, so Supervised is fine here.
 var allAutonomyTiers = []safety.AutonomyLevel{
@@ -35,22 +35,29 @@ var allAutonomyTiers = []safety.AutonomyLevel{
 // trust tier directly, modeled on CommandPalette's interaction pattern
 // (arrow keys to navigate, Enter to select, Esc to dismiss, type to filter).
 type AutonomyPicker struct {
-	open     bool
-	input    textinput.Model
-	entries  []autonomyPickerEntry
-	filtered []autonomyPickerEntry
-	sel      int
-	width    int
+	open       bool
+	input      textinput.Model
+	inputReady bool
+	entries    []autonomyPickerEntry
+	filtered   []autonomyPickerEntry
+	sel        int
+	width      int
+}
+
+func (ap *AutonomyPicker) ensureInput() {
+	if ap.inputReady {
+		return
+	}
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter…"
+	ti.CharLimit = 40
+	ti.SetWidth(40)
+	ap.input = ti
+	ap.inputReady = true
 }
 
 // NewAutonomyPicker creates a new autonomy tier picker.
 func NewAutonomyPicker(width int) *AutonomyPicker {
-	ti := textinput.New()
-	ti.Placeholder = "Type to filter…"
-	ti.Focus()
-	ti.CharLimit = 40
-	ti.SetWidth(40)
-
 	entries := make([]autonomyPickerEntry, 0, len(allAutonomyTiers))
 	for _, level := range allAutonomyTiers {
 		entries = append(entries, autonomyPickerEntry{
@@ -60,16 +67,22 @@ func NewAutonomyPicker(width int) *AutonomyPicker {
 		})
 	}
 
-	return &AutonomyPicker{
-		input:    ti,
-		width:    width,
-		entries:  entries,
-		filtered: entries,
-	}
+	ap := &AutonomyPicker{width: width, entries: entries, filtered: entries}
+	ap.ensureInput()
+	ap.input.Focus()
+	return ap
 }
 
 // Open opens the picker, pre-selecting the currently active tier.
 func (ap *AutonomyPicker) Open(current safety.AutonomyLevel) {
+	ap.ensureInput()
+	if len(ap.entries) == 0 {
+		for _, level := range allAutonomyTiers {
+			ap.entries = append(ap.entries, autonomyPickerEntry{
+				Level: level, Name: autonomyTierName(level), Description: autonomyTierDescription(level),
+			})
+		}
+	}
 	ap.open = true
 	ap.input.SetValue("")
 	ap.input.Focus()
@@ -171,16 +184,16 @@ func (ap *AutonomyPicker) Render(viewWidth int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(paletteTitleStyle.Render("  Autonomy"))
-	b.WriteString(paletteDimStyle.Render("  (↑↓ navigate · Enter select · Esc dismiss)"))
+	b.WriteString(paletteTitleStyle().Render("  Autonomy"))
+	b.WriteString(paletteDimStyle().Render("  (↑↓ navigate · Enter select · Esc dismiss)"))
 	b.WriteString("\n\n")
 
 	ap.input.SetWidth(boxWidth - 4)
-	b.WriteString(paletteInputStyle.Width(boxWidth - 2).Render(ap.input.View()))
+	b.WriteString(paletteInputStyle().Width(boxWidth - 2).Render(ap.input.View()))
 	b.WriteString("\n\n")
 
 	if len(ap.filtered) == 0 {
-		b.WriteString(paletteDimStyle.Render("  No matching tiers"))
+		b.WriteString(paletteDimStyle().Render("  No matching tiers"))
 	} else {
 		nameWidth := 0
 		for _, e := range ap.filtered {
@@ -192,15 +205,15 @@ func (ap *AutonomyPicker) Render(viewWidth int) string {
 			name := lipgloss.NewStyle().Bold(true).Foreground(autonomyTierColor(e.Level)).Render(padRight(e.Name, nameWidth))
 			line := "  " + name + "  " + e.Description
 			if i == ap.sel {
-				b.WriteString(paletteSelStyle.Width(boxWidth).Render("  " + padRight(e.Name, nameWidth) + "  " + e.Description))
+				b.WriteString(paletteSelStyle().Width(boxWidth).Render("  " + padRight(e.Name, nameWidth) + "  " + e.Description))
 			} else {
-				b.WriteString(paletteItemStyle.Width(boxWidth).Render(line))
+				b.WriteString(paletteItemStyle().Width(boxWidth).Render(line))
 			}
 			b.WriteString("\n")
 		}
 	}
 
-	return paletteBoxStyle.Width(boxWidth).Render(strings.TrimRight(b.String(), "\n"))
+	return paletteBoxStyle().Width(boxWidth).Render(strings.TrimRight(b.String(), "\n"))
 }
 
 func padRight(s string, width int) string {

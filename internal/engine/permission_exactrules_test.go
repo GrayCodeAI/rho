@@ -2,6 +2,7 @@ package engine
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/GrayCodeAI/rho/internal/permissions"
@@ -66,9 +67,6 @@ func TestPermissionServiceExactUpsertPreservesID(t *testing.T) {
 // Without a configured store, remember/revoke are no-ops (nil-by-default).
 func TestPermissionServiceExactNilByDefault(t *testing.T) {
 	svc := NewPermissionService(nil)
-	if svc.ExactRuleStore() != nil {
-		t.Fatal("exact store must be nil by default")
-	}
 	if id, ok := svc.RememberExact(stableid.KindCommand, "command\x00x", "x", stableid.Allow); ok || id != 0 {
 		t.Fatalf("remember on nil store must fail, got id=%d ok=%v", id, ok)
 	}
@@ -77,5 +75,29 @@ func TestPermissionServiceExactNilByDefault(t *testing.T) {
 	}
 	if svc.ListExact() != nil {
 		t.Fatal("list on nil store must be nil")
+	}
+}
+
+func TestPermissionServiceExactConcurrentAccess(t *testing.T) {
+	svc := NewPermissionService(nil)
+	svc.SetExactRuleStore(newExactStore(t))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			identity := "command\x00git status " + string(rune('a'+i))
+			_, _ = svc.RememberExact(stableid.KindCommand, identity, identity, stableid.Allow)
+		}(i)
+		go func() {
+			defer wg.Done()
+			_ = svc.PolicyView().ExactRules
+			_ = svc.ListExact()
+		}()
+	}
+	wg.Wait()
+	if got := len(svc.ListExact()); got != 50 {
+		t.Fatalf("concurrent exact rule count = %d, want 50", got)
 	}
 }

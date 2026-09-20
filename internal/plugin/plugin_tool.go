@@ -65,6 +65,11 @@ func (a *PluginToolAdapter) RiskLevel() string {
 	return "medium"
 }
 
+// Untrusted marks plugin tools as external implementations. A plugin's
+// registry entry and risk label do not describe its actual side effects, so
+// the permission engine requires explicit approval before execution.
+func (a *PluginToolAdapter) Untrusted() bool { return true }
+
 // PluginName returns the name of the owning plugin.
 func (a *PluginToolAdapter) PluginName() string {
 	return a.plugin.Plugin.Name

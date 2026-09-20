@@ -60,6 +60,23 @@ func TestChatViewportWidth_NarrowTerminalClampsWithoutJump(t *testing.T) {
 	}
 }
 
+func TestRenderChatPaneUsesFullWidthWithoutSessionSidebar(t *testing.T) {
+	m := chatModel{
+		viewport:     viewportWithSize(120, 4),
+		contentLines: 2,
+		width:        120,
+	}
+	m.viewport.SetContent("hello\nworld")
+
+	got := m.renderChatPane()
+	if strings.Contains(got, "SESSION") || strings.Contains(got, "CONTEXT") {
+		t.Fatalf("chat pane still renders the removed session sidebar: %q", got)
+	}
+	if !strings.Contains(got, "hello") || !strings.Contains(got, "world") {
+		t.Fatalf("chat pane lost conversation content: %q", got)
+	}
+}
+
 func TestRenderScrollbar_TopAndBottom(t *testing.T) {
 	m := chatModel{
 		viewport:     viewportWithSize(80, 10),

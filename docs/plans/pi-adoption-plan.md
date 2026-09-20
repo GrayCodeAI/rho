@@ -8,8 +8,9 @@ This plan records the features identified as genuinely missing from rho while
 auditing the Pi agent harness against Rho and its independent ecosystem
 repositories. It is
 an adoption plan, not a code-porting plan: rho reimplements compatible behavior
-in Go and preserves its existing provider, session, sandbox, permission,
-observability, and protocol boundaries.
+in Go and preserves its existing provider, session, permission, observability,
+and protocol boundaries. Rho executes tools directly on the host; it does not
+ship a product sandbox runtime.
 
 ## Executive Decision
 
@@ -25,8 +26,9 @@ Rho should adopt the following Pi features:
 5. Kitty graphics protocol support for terminal images.
 6. Session lease/ownership semantics in the daemon protocol.
 
-Rho should not copy Pi's TypeScript code, replace its Go runtime, adopt Pi's
-custom CBOR RPC protocol, or remove its native permission/sandboxing model.
+Rho should not copy Pi's TypeScript code, replace its Go runtime, or adopt Pi's
+custom CBOR RPC protocol. Its host-native permission and path/trust policy is
+the local safety boundary.
 
 ## Existing Rho Capabilities
 
@@ -39,10 +41,10 @@ The audit found that rho already provides the foundation for most Pi features:
 | `pi-coding-agent` (CLI) | `cmd` TUI + CLI + daemon | Keep rho |
 | `pi-session-backends` (storage) | `internal/session` JSONL + zstd + WAL + SQLite index, sibling `swift` (Swift) | Keep rho |
 | `pi-server` (RPC) | `internal/daemon` + `internal/acp` + `internal/mcp` | Keep rho (broader) |
-| Permissions/sandbox | `internal/engine/safety` + `internal/sandbox` (seatbelt/landlock/seccomp/ACL/netproxy) | Keep rho (native, ahead) |
+| Permissions and trust | `internal/engine/safety`, path guards, `internal/trust`, `internal/env` | Keep rho's host-native boundary |
 | `pi-tui` differential rendering | Bubble Tea v2 full-frame redraw | Adopt line-diff engine |
 | `pi-telemetry` conformance | `docs/OTEL-CONVENTIONS.md`, flux `genai_semconv` pinning | Adopt conformance suite |
-| `pi-evals` agent-level eval | `internal/feature/eval` (model benchmark only) | Adopt agent-runtime eval |
+| `pi-evals` agent-level eval | `internal/features/eval` (model benchmark only) | Adopt agent-runtime eval |
 
 ## Priority Model
 
@@ -67,7 +69,7 @@ ecosystem repositories.
   constants and their pinning test).
 - Shared schema constants: sibling `eagle` if a cross-repo
   contract is needed, otherwise keep them in flux as today.
-- No changes to `internal/mcp`, `internal/sandbox`, or `internal/daemon`.
+- No changes to `internal/mcp` or `internal/daemon` for telemetry adoption.
 
 ### Required behavior
 
@@ -100,29 +102,30 @@ ecosystem repositories.
 ### Goal
 
 Evaluate the full rho agent end-to-end (real session, tool loop, planning,
-sandbox) against tasks, and snapshot session data as artifacts — not just a
+host policy) against tasks, and snapshot session data as artifacts — not just a
 model-level benchmark.
 
 ### Scope and ownership
 
-- Primary implementation: a new `internal/feature/evalloop` package or an
-  extension of `internal/feature/eval`.
+- Primary implementation: a new `internal/features/evalloop` package or an
+  extension of `internal/features/eval`.
 - Reuse: `internal/engine` session runtime, `internal/tool` registry,
-  `internal/sandbox` isolation, `internal/session` persistence.
+  host path/trust policy, `internal/session` persistence.
 - CLI: extend `cmd/eval.go` with a loop mode.
 
 ### Required behavior
 
 1. Drive the real `Session` and tool loop for a task, not a direct LLM call.
-2. Run each evaluation in an isolated temporary directory with sandbox
-   isolation.
+2. Run each evaluation in an isolated temporary directory with explicit host
+   path guards; do not imply that the temporary directory is a security
+   sandbox.
 3. Capture normalized events: user prompt, assistant turns, tool calls/results,
    final output, usage, and cost.
 4. Snapshot the underlying session JSONL as an eval artifact (per-run), so
    failures can be replayed offline.
 5. Support comparative runs across models or configurations.
 6. Report pass/fail, token/latency/cost deltas, and reproducibility hashes.
-7. Keep model-level benchmarks (`internal/feature/eval`) intact.
+7. Keep model-level benchmarks (`internal/features/eval`) intact.
 
 ### Acceptance criteria
 
@@ -362,5 +365,5 @@ its stronger architecture:
 - The TUI re-renders only changed lines with synchronized output.
 - Session writes are fenced and remote sessions are single-owner.
 - Terminal images render in supported terminals.
-- Existing native sandboxing, permission, session, and protocol behavior remains
-  intact.
+- Existing host-native permission, path/trust, session, and protocol behavior
+  remains intact; no sandbox runtime is introduced.

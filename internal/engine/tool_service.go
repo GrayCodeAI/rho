@@ -14,7 +14,6 @@ import (
 
 	"github.com/GrayCodeAI/rho/internal/engine/token"
 
-	"github.com/GrayCodeAI/rho/internal/engine/diff"
 	"github.com/GrayCodeAI/rho/internal/engine/planning"
 	"github.com/GrayCodeAI/rho/internal/hooks"
 	"github.com/GrayCodeAI/rho/internal/intelligence/repomap"
@@ -41,7 +40,6 @@ type ToolService struct {
 	readOnlyBash      bool
 	autoCommit        bool
 	bgManager         *tool.BackgroundAgentManager
-	sandbox           *diff.DiffSandbox
 	deps              toolExecutionDeps
 	metrics           *metrics.Registry
 	auditLog          *securitylog.Log
@@ -380,8 +378,8 @@ func bool2tag(isErr bool) string {
 }
 
 // ExecuteOne performs the service-owned tool invocation: event
-// emission, container readiness, permission/approval, tracing, tool context,
-// lookup, timeout, retry, and raw execution. PostProcess and CompleteResult
+// emission, permission/approval, tracing, tool context, lookup, timeout,
+// retry, and raw execution. PostProcess and CompleteResult
 // own the remaining result lifecycle.
 func (s *ToolService) ExecuteOne(ctx context.Context, tc types.ToolCall, override tool.Tool, ch chan<- StreamEvent, turn int, intent string) toolExecResult {
 	result := toolExecResult{tc: tc, state: ToolStateValidating}
@@ -414,6 +412,16 @@ func (s *ToolService) ExecuteOne(ctx context.Context, tc types.ToolCall, overrid
 	}
 	if s.deps.permissions == nil {
 		return finishDenied("denied", "permission service is unavailable")
+	}
+	// Dynamic tools may be registered after the session's initial permission
+	// snapshot. Observe the concrete implementation immediately before policy
+	// evaluation so external MCP/plugin tools cannot inherit registry trust.
+	candidate := override
+	if candidate == nil && s.registry != nil {
+		candidate, _ = s.registry.Get(tc.Name)
+	}
+	if external, ok := candidate.(tool.UntrustedTool); ok && external.Untrusted() {
+		s.deps.permissions.MarkToolUntrusted(tc.Name)
 	}
 	result.state = ToolStatePermissionWait
 	granted, denyMsg := s.deps.permissions.CheckTool(ctx, safety.ToolCallInfo{Name: tc.Name, ID: tc.ID, Args: tc.Arguments})
@@ -455,7 +463,7 @@ func (s *ToolService) ExecuteOne(ctx context.Context, tc types.ToolCall, overrid
 	if s.deps.checkApproval != nil {
 		approved, approvalDeny = s.deps.checkApproval(ctx, tc.Name, tc.Arguments)
 	}
-	if approval := s.deps.permissions.Approval(); approval != nil && approval.Enabled && s.deps.recordPolicy != nil {
+	if s.deps.permissions.ApprovalEnabled() && s.deps.recordPolicy != nil {
 		s.deps.recordPolicy(tc, "approval", approved, approvalDeny)
 	}
 	if !approved {
@@ -744,23 +752,7 @@ func (s *ToolService) PostProcess(ctx context.Context, result toolExecResult, tu
 			}
 		}
 	}
-	sandboxIntercepted := false
-	if s.sandbox != nil && s.sandbox.IsEnabled() && !isErr && (canonical == "Write" || canonical == "Edit") {
-		if p, ok := pathArgument(result.tc.Arguments); ok {
-			origContent := ""
-			if data, readErr := readFileContent(p); readErr == nil {
-				origContent = data
-			}
-			action := "overwrite"
-			if canonical == "Edit" {
-				action = "edit"
-			}
-			s.sandbox.Stage(p, action, origContent, output)
-			output = fmt.Sprintf("Change staged for review (%s: %s)", action, p)
-			sandboxIntercepted = true
-		}
-	}
-	if life != nil && life.LintLoop() != nil && life.LintLoop().Enabled && !isErr && !sandboxIntercepted && (canonical == "Write" || canonical == "Edit") {
+	if life != nil && life.LintLoop() != nil && life.LintLoop().Enabled && !isErr && (canonical == "Write" || canonical == "Edit") {
 		if p, ok := pathArgument(result.tc.Arguments); ok {
 			count := life.LintLoop().ReflectionCount(p)
 			if life.LintLoop().ShouldRetry(count) {
@@ -911,11 +903,3 @@ func (s *ToolService) BackgroundManager() *tool.BackgroundAgentManager {
 
 // Snapshots returns the configured automatic snapshot tracker.
 func (s *ToolService) Snapshots() SnapshotTracker { return s.snapshots }
-
-// Sandbox returns the diff sandbox (staged file changes for
-// review before apply). New code should access this through
-// s.Tools().Sandbox().
-func (s *ToolService) Sandbox() *diff.DiffSandbox { return s.sandbox }
-
-// SetSandbox attaches the diff sandbox.
-func (s *ToolService) SetSandbox(sb *diff.DiffSandbox) { s.sandbox = sb }

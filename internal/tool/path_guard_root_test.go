@@ -27,9 +27,9 @@ func TestGuardedRootPathRejectsSymlinkEscape(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx := sandboxedContext(t, allowed)
+	ctx := pathBoundedContext(t, allowed)
 	if _, err := readGuardedFile(ctx, path); err == nil || !strings.Contains(err.Error(), "outside") {
-		t.Fatalf("read through symlink = %v, want an out-of-sandbox error", err)
+		t.Fatalf("read through symlink = %v, want an out-of-bounds error", err)
 	}
 }
 
@@ -39,7 +39,7 @@ func TestGuardedRootPathAllowsRegularFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx := sandboxedContext(t, allowed)
+	ctx := pathBoundedContext(t, allowed)
 	if err := writeGuardedFile(ctx, path, []byte("after"), 0o600); err != nil {
 		t.Fatal(err)
 	}

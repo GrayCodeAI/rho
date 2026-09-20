@@ -13,6 +13,17 @@ func mustKey(t *testing.T, kind Kind, canonical string) RuleKey {
 	return k
 }
 
+func TestCanonicalIdentityNamespacesKinds(t *testing.T) {
+	command := CanonicalIdentity(KindCommand, "README.md")
+	file := CanonicalIdentity(KindFileMutation, "README.md")
+	if command == file {
+		t.Fatalf("canonical identities collided: %q", command)
+	}
+	if command != "command\x00README.md" || file != "file_mutation\x00README.md" {
+		t.Fatalf("unexpected canonical identities: %q and %q", command, file)
+	}
+}
+
 // fx tests: set inserts a stable nonzero id.
 func TestSetCreatesStableNonzeroID(t *testing.T) {
 	original := NewState()

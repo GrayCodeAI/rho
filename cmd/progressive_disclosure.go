@@ -122,7 +122,7 @@ Workflow:
   /autonomy          Trust tier and rules
   /spec              Spec-driven workflow (gates Write/Edit/Bash)
   /research <cmd>    Autonomous research loop
-  /vibe              Enter vibe coding mode
+  /vibe              Start an iterative build workflow (permission policy applies)
   /think <topic>     Turn idea into approved plan
   /hunt <symptom>    Diagnose root cause
 
@@ -186,7 +186,6 @@ Memory & Intelligence:
   /remember          Store in memory
   /recall            Search memory
   /taste             Show learned preferences
-  /dream             Memory consolidation
   /away              Generate session recap
 
 Diagnostics:

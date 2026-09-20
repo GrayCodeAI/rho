@@ -560,17 +560,6 @@ func TestEnrich_JSONParseError(t *testing.T) {
 	}
 }
 
-func TestEnrich_Docker(t *testing.T) {
-	ec := NewErrorContext()
-	enriched := ec.Enrich("Cannot connect to the Docker daemon at unix:///var/run/docker.sock")
-	if enriched == nil {
-		t.Fatal("expected enriched error for Docker unavailable")
-	}
-	if enriched.Title != "Docker unavailable" {
-		t.Errorf("unexpected title: %s", enriched.Title)
-	}
-}
-
 func TestEnrich_OOM(t *testing.T) {
 	ec := NewErrorContext()
 	enriched := ec.Enrich("runtime: out of memory")

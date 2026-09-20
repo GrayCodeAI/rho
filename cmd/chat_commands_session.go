@@ -3,16 +3,13 @@ package cmd
 import (
 	"fmt"
 	"math/rand"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	sessionfeature "github.com/GrayCodeAI/rho/internal/features/session"
+	workspacefeature "github.com/GrayCodeAI/rho/internal/features/workspace"
 	"github.com/GrayCodeAI/rho/internal/session"
-	"github.com/GrayCodeAI/rho/internal/storage"
 )
 
 type sessionSaveResultMsg struct {
@@ -21,21 +18,15 @@ type sessionSaveResultMsg struct {
 	err error
 }
 
-// sessionArcDir returns the per-session directory holding the conversation-arc
-// sidecar (.arc.json).
-func sessionArcDir(id string) string {
-	return filepath.Join(storage.SessionsDir(), id)
-}
-
 // saveSession persists the current session to disk.
 func (m *chatModel) saveSession() {
 	raw := m.session.RawMessages()
 	if len(raw) == 0 {
 		return
 	}
-	err := session.Save(&session.Session{
+	err := sessionfeature.Save(sessionfeature.Snapshot{
 		ID: m.sessionID, Model: m.session.Model(), Provider: m.session.Provider(),
-		Messages: session.FromRuntimeMessages(raw), CreatedAt: time.Now(),
+		Messages: raw, Created: time.Now(), Arc: m.session.Arc(),
 	})
 	// On successful save, WAL is no longer needed (session file has everything)
 	if err == nil && m.wal != nil {
@@ -46,10 +37,6 @@ func (m *chatModel) saveSession() {
 		}
 	} else if err != nil {
 		m.recordWALError(err)
-	}
-	// Conversation arc sidecar (best-effort, only when it has content).
-	if arc := m.session.Arc(); arc != nil && !arc.IsEmpty() {
-		_ = arc.Save(sessionArcDir(m.sessionID))
 	}
 }
 
@@ -67,57 +54,38 @@ func (m *chatModel) saveSessionCmd() tea.Cmd {
 		return nil
 	}
 	id, modelName, provider := m.sessionID, m.session.Model(), m.session.Provider()
-	msgs := session.FromRuntimeMessages(raw)
 	createdAt := time.Now()
 	seq := m.walSeq
 	arc := m.session.Arc()
 	return func() tea.Msg {
-		err := session.Save(&session.Session{
+		err := sessionfeature.Save(sessionfeature.Snapshot{
 			ID: id, Model: modelName, Provider: provider,
-			Messages: msgs, CreatedAt: createdAt,
+			Messages: raw, Created: createdAt, Arc: arc,
 		})
-		if arc != nil && !arc.IsEmpty() {
-			_ = arc.Save(sessionArcDir(id))
-		}
 		return sessionSaveResultMsg{id: id, seq: seq, err: err}
 	}
 }
 
 func formatQuitResumeMessage(sessionID string) string {
-	if strings.TrimSpace(sessionID) == "" {
-		return "Thank you for using Rho!\n"
-	}
-	return fmt.Sprintf("Thank you for using Rho!\n\nTo resume this session, run: rho --resume %s\n", sessionID)
+	return sessionfeature.QuitResumeMessage(sessionID)
 }
 
 // handleSessionCommand dispatches session-management slash commands.
 func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string) (tea.Model, tea.Cmd) {
 	switch cmd {
 	case "/quit", "/exit":
-		// Re-enable system sleep if it was prevented, then use the canonical
-		// quit sequence (cancel stream → save → stop watcher/parallel/bg →
-		// stop container) rather than a hand-rolled duplicate that previously
-		// missed cancelling the in-flight stream.
-		if m.sleepCancel != nil {
-			m.sleepCancel()
-			m.sleepCancel = nil
-		}
+		// Re-enable system sleep before the canonical quit sequence.
+		sessionfeature.StopBackgroundWork(sessionfeature.CleanupHooks{SleepCancel: m.sleepCancel})
+		m.sleepCancel = nil
 		return m.quitModel()
 
 	case "/clear":
 		if m.manualCompacting {
 			return m.cancelManualCompact("Compaction cancelled.")
 		}
-		// Cancel any running /loop goroutine.
-		if m.loopCancel != nil {
-			m.loopCancel()
-			m.loopCancel = nil
-		}
-		// Cancel any running /parallel agents.
-		if m.parallelCancel != nil {
-			m.parallelCancel()
-			m.parallelCancel = nil
-		}
+		sessionfeature.StopBackgroundWork(sessionfeature.CleanupHooks{LoopCancel: m.loopCancel, ParallelCancel: m.parallelCancel})
+		m.loopCancel = nil
+		m.parallelCancel = nil
 		m.messages = []displayMsg{{role: "system", content: "Conversation cleared."}}
 		m.invalidateViewportCache()
 		m.viewDirty = true
@@ -137,56 +105,36 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 		return m.startManualCompact()
 
 	case "/diff":
-		stat, statErr := gitOutput("diff", "--stat")
-		diff, diffErr := gitOutput("diff")
-		if strings.TrimSpace(diff) == "" {
-			stat, statErr = gitOutput("diff", "--cached", "--stat")
-			diff, diffErr = gitOutput("diff", "--cached")
-		}
-		// Report git errors instead of silently showing "No changes detected".
-		if statErr != nil || diffErr != nil {
-			errMsg := "git diff failed"
-			if statErr != nil {
-				errMsg = statErr.Error()
-			} else if diffErr != nil {
-				errMsg = diffErr.Error()
-			}
-			m.messages = append(m.messages, displayMsg{role: "error", content: errMsg})
+		output, err := workspacefeature.DiffReport()
+		if err != nil {
+			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
 		}
-		if strings.TrimSpace(diff) == "" {
+		if output == "" {
 			m.messages = append(m.messages, displayMsg{role: "system", content: "No changes detected."})
 			return m, nil
-		}
-		output := stat + "\n\n" + diff
-		if len(output) > 10000 {
-			output = stat + "\n\n(diff too large, showing stat only)"
 		}
 		m.messages = append(m.messages, displayMsg{role: "system", content: output})
 		return m, nil
 
 	case "/history":
-		entries, err := session.List()
-		if err != nil || len(entries) == 0 {
+		report, found, err := sessionfeature.HistoryReport()
+		if err != nil || !found {
 			m.messages = append(m.messages, displayMsg{role: "system", content: "No saved sessions."})
 			return m, nil
 		}
-		var b strings.Builder
-		for _, e := range entries {
-			b.WriteString(fmt.Sprintf("  %s  %s  %s\n", e.ID, e.UpdatedAt.Format("Jan 02 15:04"), e.Preview))
-		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: b.String()})
+		m.messages = append(m.messages, displayMsg{role: "system", content: report})
 		return m, nil
 
 	case "/recover":
-		candidates := session.ScanForRecovery()
+		candidates := sessionfeature.RecoveryCandidates()
 		if len(candidates) == 0 {
 			m.messages = append(m.messages, displayMsg{role: "system", content: "No interrupted sessions found."})
 			return m, nil
 		}
 		if len(parts) >= 2 {
 			// Resume specific session
-			s, note, err := session.ResumeSession(parts[1])
+			s, note, err := sessionfeature.Resume(parts[1])
 			if err != nil {
 				m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 				return m, nil
@@ -194,31 +142,17 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 			m.sessionID = s.ID
 			m.invalidateViewportCache()
 			m.messages = []displayMsg{{role: "welcome", content: m.welcomeCache}}
-			msgs := session.ToRuntimeMessages(s.Messages)
-			for _, sm := range s.Messages {
-				if sm.Role == "user" || sm.Role == "assistant" {
-					m.messages = append(m.messages, displayMsg{role: sm.Role, content: sm.Content})
-				}
+			hydrated := sessionfeature.Hydrate(s)
+			for _, message := range hydrated.Display {
+				m.messages = append(m.messages, displayMsg{role: message.Role, content: message.Content})
 			}
-			m.session.LoadMessages(msgs)
+			m.session.LoadMessages(hydrated.Runtime)
 			m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Recovered: %s\nSession %s ready (%d msgs)", note, s.ID, len(s.Messages))})
 			m.viewDirty = true
 			m.autoScroll = false
 			return m, nil
 		}
-		// List candidates
-		var b strings.Builder
-		b.WriteString(fmt.Sprintf("Found %d interrupted session(s):\n\n", len(candidates)))
-		for i, c := range candidates {
-			shortID := c.SessionID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
-			}
-			b.WriteString(fmt.Sprintf("%d. [%s] %s — %s (%d msgs, %s)\n",
-				i+1, shortID, c.Interruption, c.CWD, c.MessageCount, formatDuration(c.Age)))
-		}
-		b.WriteString("\nResume with: /recover <session-id>")
-		m.messages = append(m.messages, displayMsg{role: "system", content: b.String()})
+		m.messages = append(m.messages, displayMsg{role: "system", content: sessionfeature.RecoveryReport(candidates)})
 		return m, nil
 
 	case "/resume":
@@ -226,7 +160,7 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /resume <session-id>"})
 			return m, nil
 		}
-		saved, err := session.Load(parts[1])
+		saved, err := sessionfeature.Load(parts[1])
 		if err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
@@ -234,13 +168,11 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 		m.sessionID = saved.ID
 		m.invalidateViewportCache()
 		m.messages = []displayMsg{{role: "welcome", content: m.welcomeCache}}
-		msgs := session.ToRuntimeMessages(saved.Messages)
-		for _, sm := range saved.Messages {
-			if sm.Role == "user" || sm.Role == "assistant" {
-				m.messages = append(m.messages, displayMsg{role: sm.Role, content: sm.Content})
-			}
+		hydrated := sessionfeature.Hydrate(saved)
+		for _, message := range hydrated.Display {
+			m.messages = append(m.messages, displayMsg{role: message.Role, content: message.Content})
 		}
-		m.session.LoadMessages(msgs)
+		m.session.LoadMessages(hydrated.Runtime)
 		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Resumed session %s", saved.ID)})
 		m.viewDirty = true
 		m.autoScroll = false
@@ -272,16 +204,12 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 		}
 		// Fallback: legacy session fork
 		atIndex := len(m.session.RawMessages()) - 1
-		if len(parts) >= 2 {
-			if idx, err := strconv.Atoi(parts[1]); err == nil {
-				atIndex = idx
-			}
-		}
+		atIndex = sessionfeature.ParseForkIndex(parts[1:], atIndex)
 		if atIndex < 0 {
 			m.messages = append(m.messages, displayMsg{role: "error", content: "No messages to fork from."})
 			return m, nil
 		}
-		forked, err := session.Fork(m.sessionID, atIndex)
+		forked, err := sessionfeature.ForkAtMessage(m.sessionID, atIndex)
 		if err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
@@ -292,14 +220,8 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 	case "/export":
 		format := "md"
 		if len(parts) >= 2 {
-			switch strings.ToLower(parts[1]) {
-			case "md", "markdown":
-				format = "md"
-			case "json":
-				format = "json"
-			case "txt", "text":
-				format = "txt"
-			default:
+			parsedFormat, ok := sessionfeature.ParseExportFormat(parts[1])
+			if !ok {
 				m.messages = append(m.messages, displayMsg{
 					role: "system",
 					content: "Usage: /export [format]\n" +
@@ -310,6 +232,7 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 				})
 				return m, nil
 			}
+			format = parsedFormat
 		}
 		exportPath, err := exportSession(m, format)
 		if err != nil {
@@ -338,10 +261,7 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 			m.messages = append(m.messages, displayMsg{role: "error", content: fmt.Sprintf("Invalid session name: %v", err)})
 			return m, nil
 		}
-		sessDir := storage.SessionsDir()
-		oldPath := filepath.Join(sessDir, filepath.Base(m.sessionID)+".jsonl")
-		newPath := filepath.Join(sessDir, newName+".jsonl")
-		if err := os.Rename(oldPath, newPath); err != nil {
+		if err := sessionfeature.Rename(m.sessionID, newName); err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 		} else {
 			m.sessionID = newName
@@ -354,13 +274,9 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 			m.messages = append(m.messages, displayMsg{role: "system", content: "Usage: /tag <label>"})
 			return m, nil
 		}
-		tagFile := filepath.Join(storage.SessionsDir(), filepath.Base(m.sessionID)+".tags")
-		f, err := os.OpenFile(tagFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 -- tagFile built from internal sessions directory and session id
-		if err != nil {
+		if err := sessionfeature.AddTag(m.sessionID, parts[1]); err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 		} else {
-			_, _ = f.WriteString(parts[1] + "\n")
-			_ = f.Close()
 			m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Tagged: %s", parts[1])})
 		}
 		return m, nil
@@ -370,28 +286,18 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /search <query>"})
 			return m, nil
 		}
-		query := strings.TrimSpace(strings.TrimPrefix(text, "/search"))
-		results, err := session.SearchSessions(query, 10)
-		if err != nil || len(results) == 0 {
+		query := sessionfeature.SearchQuery(text)
+		report, found, err := sessionfeature.SearchReport(query, 10)
+		if err != nil || !found {
 			m.messages = append(m.messages, displayMsg{role: "system", content: "No results found."})
 			return m, nil
 		}
-		var b strings.Builder
-		b.WriteString(fmt.Sprintf("Search results for %q:\n", query))
-		for _, r := range results {
-			b.WriteString(fmt.Sprintf("  [%s] msg %d (%s): %s\n", r.SessionID, r.MsgIndex, r.Role, r.Preview))
-		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: b.String()})
+		m.messages = append(m.messages, displayMsg{role: "system", content: report})
 		return m, nil
 
 	case "/clean":
-		days := 30
-		if len(parts) >= 2 {
-			if d, err := strconv.Atoi(parts[1]); err == nil && d > 0 {
-				days = d
-			}
-		}
-		removed, err := session.CleanOldSessions(time.Duration(days) * 24 * time.Hour)
+		days := sessionfeature.ParsePositiveDays(parts[1:], 30)
+		removed, err := sessionfeature.CleanOld(time.Duration(days) * 24 * time.Hour)
 		if err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
@@ -400,13 +306,8 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 		return m, nil
 
 	case "/compress":
-		days := 7
-		if len(parts) >= 2 {
-			if d, err := strconv.Atoi(parts[1]); err == nil && d > 0 {
-				days = d
-			}
-		}
-		count, err := session.CompressOldSessions(time.Duration(days) * 24 * time.Hour)
+		days := sessionfeature.ParsePositiveDays(parts[1:], 7)
+		count, err := sessionfeature.CompressOld(time.Duration(days) * 24 * time.Hour)
 		if err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: err.Error()})
 			return m, nil
@@ -416,7 +317,9 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 
 	case "/rewind":
 		if m.session.MessageCount() > 2 {
-			m.session.RemoveLastExchange()
+			if msgs, removed := sessionfeature.RemoveLastExchanges(m.session.RawMessages(), 1); removed > 0 {
+				m.session.LoadMessages(msgs)
+			}
 			if len(m.messages) >= 2 {
 				m.messages = m.messages[:len(m.messages)-2]
 			}
@@ -433,42 +336,31 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 			m.updateViewportContent()
 			return m, nil
 		}
-		// Cancel any running /loop goroutine.
-		if m.loopCancel != nil {
-			m.loopCancel()
-			m.loopCancel = nil
-		}
-		// Cancel any running /parallel agents.
-		if m.parallelCancel != nil {
-			m.parallelCancel()
-			m.parallelCancel = nil
-		}
-		// Re-enable system sleep if it was prevented.
-		if m.sleepCancel != nil {
-			m.sleepCancel()
-			m.sleepCancel = nil
-		}
+		sessionfeature.StopBackgroundWork(sessionfeature.CleanupHooks{
+			LoopCancel: m.loopCancel, ParallelCancel: m.parallelCancel, SleepCancel: m.sleepCancel,
+		})
+		m.loopCancel = nil
+		m.parallelCancel = nil
+		m.sleepCancel = nil
 		// Drop the last N exchanges (user+assistant pairs) from context.
-		n := 1
-		if len(parts) >= 2 {
-			parsed, err := strconv.Atoi(parts[1])
-			if err != nil || parsed <= 0 {
-				m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /drop [N] (N must be a positive integer)"})
-				return m, nil
-			}
-			n = parsed
+		n, err := sessionfeature.ParsePositiveCount(parts[1:], 1)
+		if err != nil {
+			m.messages = append(m.messages, displayMsg{role: "error", content: "Usage: /drop [N] (N must be a positive integer)"})
+			return m, nil
 		}
 		if m.session.MessageCount() <= 2 {
 			m.messages = append(m.messages, displayMsg{role: "system", content: "Nothing to drop."})
 			return m, nil
 		}
 		dropped := 0
-		for i := 0; i < n && m.session.MessageCount() > 2; i++ {
-			m.session.RemoveLastExchange()
-			if len(m.messages) >= 2 {
-				m.messages = m.messages[:len(m.messages)-2]
+		if m.session.MessageCount() > 2 {
+			if msgs, removed := sessionfeature.RemoveLastExchanges(m.session.RawMessages(), n); removed > 0 {
+				m.session.LoadMessages(msgs)
+				dropped = removed
 			}
-			dropped++
+		}
+		for i := 0; i < dropped && len(m.messages) >= 2; i++ {
+			m.messages = m.messages[:len(m.messages)-2]
 		}
 		m.messages = append(m.messages, displayMsg{role: "system", content: fmt.Sprintf("Dropped %d exchange(s).", dropped)})
 		m.invalidateViewportCache()
@@ -476,10 +368,11 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 		return m, nil
 
 	case "/retry":
-		if len(m.history) > 0 {
-			last := m.history[len(m.history)-1]
+		if last, ok := m.history.Last(); ok {
 			if m.session.MessageCount() > 2 {
-				m.session.RemoveLastExchange()
+				if msgs, removed := sessionfeature.RemoveLastExchanges(m.session.RawMessages(), 1); removed > 0 {
+					m.session.LoadMessages(msgs)
+				}
 				if len(m.messages) >= 2 {
 					m.messages = m.messages[:len(m.messages)-2]
 				}
@@ -498,26 +391,14 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 
 	case "/new":
 		m.saveSession()
-		// Cancel any running /loop goroutine.
-		if m.loopCancel != nil {
-			m.loopCancel()
-			m.loopCancel = nil
-		}
-		// Cancel any running /parallel agents.
-		if m.parallelCancel != nil {
-			m.parallelCancel()
-			m.parallelCancel = nil
-		}
-		// Re-enable system sleep if it was prevented.
-		if m.sleepCancel != nil {
-			m.sleepCancel()
-			m.sleepCancel = nil
-		}
-		// Stop file watcher if active.
-		if m.watcherStop != nil {
-			m.watcherStop()
-			m.watcherStop = nil
-		}
+		sessionfeature.StopBackgroundWork(sessionfeature.CleanupHooks{
+			LoopCancel: m.loopCancel, ParallelCancel: m.parallelCancel,
+			SleepCancel: m.sleepCancel, WatcherStop: m.watcherStop,
+		})
+		m.loopCancel = nil
+		m.parallelCancel = nil
+		m.sleepCancel = nil
+		m.watcherStop = nil
 		m.invalidateViewportCache()
 		m.messages = []displayMsg{{role: "welcome", content: m.welcomeCache}}
 		m.session.LoadMessages(nil)
@@ -542,30 +423,12 @@ func (m *chatModel) handleSessionCommand(cmd string, parts []string, text string
 		return m.handleSnapshot(text)
 
 	case "/integrity":
-		saved, err := session.Load(m.sessionID)
+		report, err := sessionfeature.IntegrityReport(m.sessionID)
 		if err != nil {
 			m.messages = append(m.messages, displayMsg{role: "error", content: "Could not load current session: " + err.Error()})
 			return m, nil
 		}
-		check := session.ValidateIntegrity(saved)
-		var ib strings.Builder
-		if check.Valid {
-			ib.WriteString("Session integrity: VALID\n")
-		} else {
-			ib.WriteString("Session integrity: INVALID\n")
-		}
-		ib.WriteString(fmt.Sprintf("Messages: %d (user: %d, assistant: %d)\n", check.Stats.MessageCount, check.Stats.UserMessages, check.Stats.AssistantMessages))
-		ib.WriteString(fmt.Sprintf("Tool uses: %d, Tool results: %d\n", check.Stats.ToolUses, check.Stats.ToolResults))
-		if check.Stats.OrphanedResults > 0 {
-			ib.WriteString(fmt.Sprintf("Orphaned results: %d\n", check.Stats.OrphanedResults))
-		}
-		for _, w := range check.Warnings {
-			ib.WriteString("  warning: " + w + "\n")
-		}
-		for _, e := range check.Errors {
-			ib.WriteString("  error: " + e + "\n")
-		}
-		m.messages = append(m.messages, displayMsg{role: "system", content: ib.String()})
+		m.messages = append(m.messages, displayMsg{role: "system", content: report})
 		return m, nil
 	}
 

@@ -54,10 +54,6 @@ indent_size = 4
 [{Makefile,*.mk}]
 indent_style = tab
 
-# Dockerfiles.
-[Dockerfile*]
-indent_size = 4
-
 # GitHub Actions workflows — 2 spaces.
 [.github/**/*.{yml,yaml}]
 indent_size = 2

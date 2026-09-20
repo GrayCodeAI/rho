@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	rhoconfig "github.com/GrayCodeAI/rho/internal/config"
+	"github.com/GrayCodeAI/rho/internal/plugin"
 	"github.com/GrayCodeAI/rho/internal/provider/routing"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -71,24 +72,19 @@ func (g *CompletionGenerator) populateModels() {
 }
 
 func (g *CompletionGenerator) populateSlashCommands() {
-	g.SlashCommands = []string{
-		"/add", "/add-dir", "/agents", "/agents-init", "/audit", "/autonomy", "/branch", "/branches",
-		"/bughunter", "/btw", "/check", "/clean", "/clear", "/color", "/commit", "/compact",
-		"/compress", "/config", "/context", "/copy", "/cost", "/council", "/cron",
-		"/design", "/diff", "/doctor", "/drop", "/effort", "/env", "/exit", "/explain",
-		"/export", "/fast", "/feedback", "/files", "/focus", "/follow", "/fork", "/help", "/history", "/hooks",
-		"/hunt", "/init", "/integrity", "/keybindings", "/learn", "/lint", "/loop",
-		"/mcp", "/memory", "/metrics", "/model", "/new", "/output-style",
-		"/pin", "/plugin", "/plugins", "/power",
-		"/pr-comments", "/provider-status", "/quit", "/refresh-model-catalog",
-		"/release-notes", "/reload-plugins", "/remote-env", "/rename", "/render",
-		"/research", "/resume", "/retry", "/review", "/rewind", "/run",
-		"/search", "/security-review", "/select", "/mouse", "/session", "/share", "/skills",
-		"/snapshot", "/spec", "/stats", "/status", "/statusline", "/summary", "/tag", "/tasks",
-		"/test", "/theme", "/think", "/think-back", "/thinkback", "/thinkback-play",
-		"/tokens", "/tools", "/undo", "/upgrade", "/usage", "/version", "/vibe",
-		"/vim", "/voice", "/welcome",
+	// Keep shell, JSON, and interactive completion on the same catalog used by
+	// dispatch, the command palette, and in-chat suggestions. A second literal
+	// list silently drifted whenever a command was added or migrated.
+	runtime := plugin.NewRuntime()
+	if err := runtime.LoadAll(); err == nil {
+		// Loading manifests is read-only; plugin scripts are not executed. This
+		// keeps generated shell completion aware of installed plugin commands.
+		g.SlashCommands = slashCommandsFor(runtime)
+		return
 	}
+	// Completion must remain available when a plugin manifest is malformed or
+	// unreadable. Static rho commands are still a complete fallback.
+	g.SlashCommands = slashCommands()
 }
 
 // GenerateBash returns a complete bash completion script for rho.

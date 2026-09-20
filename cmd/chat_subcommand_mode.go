@@ -7,7 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/GrayCodeAI/rho/internal/engine"
-	"github.com/GrayCodeAI/rho/internal/feature/shellmode"
+	"github.com/GrayCodeAI/rho/internal/features/shellmode"
 )
 
 // modeSubcommand implements the /mode slash command.

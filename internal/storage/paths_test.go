@@ -91,14 +91,15 @@ func TestLegacyEnvOverridesStillResolve(t *testing.T) {
 	}
 }
 
-func TestResolveAppDirPrefersLegacyWhenPresent(t *testing.T) {
+func TestResolveAppDirIgnoresLegacyDirectory(t *testing.T) {
 	root := t.TempDir()
 	legacy := filepath.Join(root, legacyAppName)
 	if err := os.MkdirAll(legacy, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if got := resolveAppDir(root); got != legacy {
-		t.Fatalf("resolveAppDir = %q, want existing legacy dir %q", got, legacy)
+	want := filepath.Join(root, appName)
+	if got := resolveAppDir(root); got != want {
+		t.Fatalf("resolveAppDir = %q, want current dir %q", got, want)
 	}
 }
 

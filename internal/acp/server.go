@@ -190,8 +190,10 @@ func (s *Server) handle(ctx context.Context, msg rpcMessage) {
 			},
 			// Rho control-plane metadata for IDE clients that want it.
 			"rhoCapabilities": map[string]any{
-				"workModes":       []string{"plan", "act", "review"},
-				"isolation":       []string{"dev", "workspace", "strict", "container"},
+				"workModes": []string{"plan", "act", "review"},
+				// Rho has no local OS/container sandbox runtime. These are the
+				// only isolation choices the ACP surface can actually honor.
+				"isolation":       []string{"none", "worktree"},
 				"folderTrust":     true,
 				"lazyTools":       true,
 				"autoCommit":      true,

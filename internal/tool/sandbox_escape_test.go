@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// sandboxedContext returns a context whose ToolContext restricts writes to the
+// pathBoundedContext returns a context whose ToolContext restricts writes to the
 // supplied allowed directory (plus the CWD "."). With no ToolContext at all,
 // validatePathAllowed no-ops — so tests MUST attach one to exercise the guard.
-func sandboxedContext(t *testing.T, allowed string) context.Context {
+func pathBoundedContext(t *testing.T, allowed string) context.Context {
 	t.Helper()
 	return WithToolContext(context.Background(), &ToolContext{
 		AllowedDirectories: []string{allowed},
@@ -22,10 +22,10 @@ func sandboxedContext(t *testing.T, allowed string) context.Context {
 // outsidePath is an absolute path that is never within a tempdir workspace.
 const outsidePath = "/etc/hosts-tool-guard-test"
 
-func TestStructuredEditTool_RejectsPathOutsideSandbox(t *testing.T) {
+func TestStructuredEditTool_RejectsPathOutsideAllowedDirectory(t *testing.T) {
 	t.Parallel()
 	tool := StructuredEditTool{}
-	ctx := sandboxedContext(t, t.TempDir())
+	ctx := pathBoundedContext(t, t.TempDir())
 
 	input, _ := json.Marshal(map[string]any{
 		"path": outsidePath,
@@ -35,15 +35,15 @@ func TestStructuredEditTool_RejectsPathOutsideSandbox(t *testing.T) {
 	})
 	_, err := tool.Execute(ctx, input)
 	if err == nil {
-		t.Fatal("expected StructuredEditTool to reject a path outside the sandbox")
+		t.Fatal("expected StructuredEditTool to reject a path outside the allowed directory")
 	}
 	if !strings.Contains(err.Error(), "outside") {
-		t.Fatalf("expected an out-of-sandbox error, got: %v", err)
+		t.Fatalf("expected an out-of-bounds error, got: %v", err)
 	}
 }
 
 // A path inside the allowed directory must still be accepted by StructuredEdit.
-func TestStructuredEditTool_AcceptsPathInsideSandbox(t *testing.T) {
+func TestStructuredEditTool_AcceptsPathInsideAllowedDirectory(t *testing.T) {
 	t.Parallel()
 	tool := StructuredEditTool{}
 	allowed := t.TempDir()
@@ -51,7 +51,7 @@ func TestStructuredEditTool_AcceptsPathInsideSandbox(t *testing.T) {
 	if err := os.WriteFile(target, []byte("package main\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx := sandboxedContext(t, allowed)
+	ctx := pathBoundedContext(t, allowed)
 
 	input, _ := json.Marshal(map[string]any{
 		"path": target,
@@ -61,7 +61,7 @@ func TestStructuredEditTool_AcceptsPathInsideSandbox(t *testing.T) {
 	})
 	_, err := tool.Execute(ctx, input)
 	if err != nil {
-		t.Fatalf("expected in-sandbox path to succeed, got: %v", err)
+		t.Fatalf("expected in-bounds path to succeed, got: %v", err)
 	}
 	data, rerr := os.ReadFile(target)
 	if rerr != nil {
@@ -72,30 +72,30 @@ func TestStructuredEditTool_AcceptsPathInsideSandbox(t *testing.T) {
 	}
 }
 
-func TestSmartCreateTool_RejectsPathOutsideSandbox(t *testing.T) {
+func TestSmartCreateTool_RejectsPathOutsideAllowedDirectory(t *testing.T) {
 	t.Parallel()
 	tool := &SmartCreateTool{Creator: NewSmartCreator(t.TempDir())}
-	ctx := sandboxedContext(t, t.TempDir())
+	ctx := pathBoundedContext(t, t.TempDir())
 
 	input, _ := json.Marshal(map[string]any{"path": outsidePath + ".go"})
 	_, err := tool.Execute(ctx, input)
 	if err == nil {
-		t.Fatal("expected SmartCreateTool to reject a path outside the sandbox")
+		t.Fatal("expected SmartCreateTool to reject a path outside the allowed directory")
 	}
 }
 
 // A path inside the allowed directory must still be accepted by SmartCreate.
-func TestSmartCreateTool_AcceptsPathInsideSandbox(t *testing.T) {
+func TestSmartCreateTool_AcceptsPathInsideAllowedDirectory(t *testing.T) {
 	t.Parallel()
 	tool := &SmartCreateTool{Creator: NewSmartCreator(t.TempDir())}
 	allowed := t.TempDir()
 	target := filepath.Join(allowed, "new.txt")
-	ctx := sandboxedContext(t, allowed)
+	ctx := pathBoundedContext(t, allowed)
 
 	input, _ := json.Marshal(map[string]any{"path": target})
 	res, err := tool.Execute(ctx, input)
 	if err != nil {
-		t.Fatalf("expected in-sandbox create to succeed, got: %v", err)
+		t.Fatalf("expected in-bounds create to succeed, got: %v", err)
 	}
 	if _, statErr := os.Stat(target); statErr != nil {
 		t.Fatalf("expected file to be created at %s: %v", target, statErr)
@@ -107,27 +107,27 @@ func TestSmartCreateTool_AcceptsPathInsideSandbox(t *testing.T) {
 
 // PatchTool applies to files named inside the patch body, so a patch that
 // targets an out-of-workspace file must be rejected before any write happens.
-func TestPatchTool_RejectsPatchTargetingPathOutsideSandbox(t *testing.T) {
+func TestPatchTool_RejectsPatchTargetingPathOutsideAllowedDirectory(t *testing.T) {
 	t.Parallel()
 	tool := PatchTool{}
 	allowed := t.TempDir()
-	// Seed the in-sandbox reference file so the "update" path's contents resolve;
+	// Seed the in-bounds reference file so the "update" path's contents resolve;
 	// the guard must still reject it on path grounds before reading.
 	if err := os.WriteFile(filepath.Join(allowed, "ok.txt"), []byte("keep\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx := sandboxedContext(t, allowed)
+	ctx := pathBoundedContext(t, allowed)
 
 	patch := "*** Begin Patch\n*** Update File: " + outsidePath + "\n@@@ @@@\n-removed\n+added\n*** End Patch\n"
 	input, _ := json.Marshal(map[string]any{"patch": patch})
 	_, err := tool.Execute(ctx, input)
 	if err == nil {
-		t.Fatal("expected PatchTool to reject a patch targeting a path outside the sandbox")
+		t.Fatal("expected PatchTool to reject a patch targeting a path outside the allowed directory")
 	}
 }
 
-// A patch targeting an in-sandbox file must still apply.
-func TestPatchTool_AcceptsPatchTargetingPathInsideSandbox(t *testing.T) {
+// A patch targeting an in-bounds file must still apply.
+func TestPatchTool_AcceptsPatchTargetingPathInsideAllowedDirectory(t *testing.T) {
 	t.Parallel()
 	tool := PatchTool{}
 	allowed := t.TempDir()
@@ -135,7 +135,7 @@ func TestPatchTool_AcceptsPatchTargetingPathInsideSandbox(t *testing.T) {
 	if err := os.WriteFile(target, []byte("func main() {\n\toriginal\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ctx := sandboxedContext(t, allowed)
+	ctx := pathBoundedContext(t, allowed)
 
 	patch := "*** Begin Patch\n" +
 		"*** Update File: " + target + "\n" +
@@ -146,7 +146,7 @@ func TestPatchTool_AcceptsPatchTargetingPathInsideSandbox(t *testing.T) {
 	input, _ := json.Marshal(map[string]any{"patch": patch})
 	res, err := tool.Execute(ctx, input)
 	if err != nil {
-		t.Fatalf("expected in-sandbox patch to succeed, got: %v", err)
+		t.Fatalf("expected in-bounds patch to succeed, got: %v", err)
 	}
 	if !strings.Contains(res, "patched") && !strings.Contains(res, "file") {
 		t.Fatalf("expected a successful patch result, got: %q", res)

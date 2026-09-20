@@ -31,26 +31,26 @@ const (
 func BlockStyle(kind BlockKind) (titleStyle, contentStyle lipgloss.Style) {
 	switch kind {
 	case BlockToolUse:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+		return lipgloss.NewStyle().Foreground(infoSky).Bold(true),
+			lipgloss.NewStyle().Foreground(textMuted)
 	case BlockThinking:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Italic(true)
+		return lipgloss.NewStyle().Foreground(costViolet).Bold(true),
+			lipgloss.NewStyle().Foreground(textMuted).Italic(true)
 	case BlockDiff:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		return lipgloss.NewStyle().Foreground(successTeal).Bold(true),
+			lipgloss.NewStyle().Foreground(textPrimary)
 	case BlockTest:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		return lipgloss.NewStyle().Foreground(doneGreen).Bold(true),
+			lipgloss.NewStyle().Foreground(textPrimary)
 	case BlockReview:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		return lipgloss.NewStyle().Foreground(warnAmber).Bold(true),
+			lipgloss.NewStyle().Foreground(textPrimary)
 	case BlockPlan:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		return lipgloss.NewStyle().Foreground(hudBorderPurple).Bold(true),
+			lipgloss.NewStyle().Foreground(textPrimary)
 	default:
 		return lipgloss.NewStyle().Bold(true),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+			lipgloss.NewStyle().Foreground(textPrimary)
 	}
 }
 
@@ -89,7 +89,7 @@ func RenderBlockSection(block BlockSection, width int) string {
 
 	borderStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), false, false, true, false).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(borderDim).
 		Width(boxWidth)
 
 	return borderStyle.Render(strings.TrimRight(b.String(), "\n"))

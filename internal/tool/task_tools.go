@@ -76,9 +76,8 @@ func startBackgroundBash(ctx context.Context, command string, execName string, e
 
 	// The Bash tool performs command policy/approval checks before starting a
 	// background task; this is the intentional shell execution boundary.
-	// execName/execArgs are already sandbox-wrapped by the Bash tool (or
-	// default to "bash" "-c" when sandbox is off).
-	cmd := exec.CommandContext(bgCtx, execName, execArgs...) // #nosec G204 -- intentional Bash tool execution after policy checks and sandbox wrapping
+	// execName/execArgs have already passed the Bash tool's policy checks.
+	cmd := exec.CommandContext(bgCtx, execName, execArgs...) // #nosec G204 -- intentional Bash tool execution after policy checks
 	// Background tasks are long-lived and observable by the agent; scrub
 	// provider API keys so the child environment cannot leak credentials.
 	cmd.Env = env.SubprocessEnv()

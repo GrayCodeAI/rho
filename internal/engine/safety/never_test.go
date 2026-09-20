@@ -3,6 +3,7 @@ package safety
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestNeverAllow_BlocksEvenAtYOLO(t *testing.T) {
@@ -35,11 +36,24 @@ func TestNeverAllow_BlockedByBypass(t *testing.T) {
 	pe := NewPermissionEngine()
 	pe.SetNeverAllow([]string{"Delete"})
 	pe.Autonomy = AutonomyYOLO
-	pe.BypassKill.Enable()
+	if !pe.BypassKill.EnableScoped(nil, time.Time{}, "never-rule test") {
+		t.Fatal("failed to enable test bypass")
+	}
 
 	d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "Delete"})
 	if d.Outcome != DecisionDeny {
 		t.Fatalf("Delete should be denied even with bypass, got %#v", d)
+	}
+}
+
+func TestNeverAllow_BlocksSpecStageWorkflowAllow(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Stage = SpecStagePlan
+	pe.SetNeverAllow([]string{"Read(*)"})
+
+	d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "Read", Args: map[string]interface{}{"path": "README.md"}})
+	if d.Outcome != DecisionDeny || d.Reason != ReasonRuleDenied {
+		t.Fatalf("never-rule during spec stage = %#v, want rule denial", d)
 	}
 }
 

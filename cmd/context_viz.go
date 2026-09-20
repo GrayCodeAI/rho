@@ -82,17 +82,17 @@ func (cv *ContextVisualization) Render(width int) string {
 	var barStyle lipgloss.Style
 	switch cv.State() {
 	case ContextNormal:
-		barStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")) // green
+		barStyle = lipgloss.NewStyle().Foreground(successTeal)
 	case ContextWarning:
-		barStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // orange
+		barStyle = lipgloss.NewStyle().Foreground(warnAmber)
 	case ContextError:
-		barStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+		barStyle = lipgloss.NewStyle().Foreground(errorCoral)
 	case ContextBlocking:
-		barStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+		barStyle = lipgloss.NewStyle().Foreground(errorCoral).Bold(true)
 	}
 
 	filledBar := barStyle.Render(strings.Repeat("█", filled))
-	emptyBar := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("░", barWidth-filled))
+	emptyBar := lipgloss.NewStyle().Foreground(textDisabled).Render(strings.Repeat("░", barWidth-filled))
 
 	label := fmt.Sprintf(" %3.0f%%", pct)
 	return filledBar + emptyBar + label

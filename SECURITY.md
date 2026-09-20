@@ -96,7 +96,7 @@ The following settings **cannot** be set by project-level config (stripped by
 - API keys (never stored in settings.json; use OS secret store via `/config`)
 
 The following settings **can** be set by project config (anything not stripped):
-- `theme`, `autonomy`, `sandbox`, `max_budget_usd`, and other
+- `theme`, `autonomy`, `max_budget_usd`, and other
   repository-local behavior
 
 ### Config merge precedence

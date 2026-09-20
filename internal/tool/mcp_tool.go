@@ -57,6 +57,11 @@ func (m *MCPTool) Description() string                { return m.description }
 func (m *MCPTool) Parameters() map[string]interface{} { return m.schema }
 func (m *MCPTool) MCPServerName() string              { return m.serverName }
 
+// Untrusted identifies MCP tools as external implementations. Their schema
+// describes inputs, not side effects, so registration is never a capability
+// declaration for permission purposes.
+func (m *MCPTool) Untrusted() bool { return true }
+
 // RiskLevel reports MCP tools as high risk. A remote MCP server is untrusted
 // third-party code whose declared schema does not reveal whether the tool
 // writes files, executes commands, or performs network calls, so it must not

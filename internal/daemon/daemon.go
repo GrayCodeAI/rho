@@ -830,12 +830,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		sess.PermSvc().SetAutonomy(requested)
 	}
 
-	// Auto-approve permissions based on autonomy (non-interactive)
+	// The central PermissionEngine auto-allows calls permitted by the active
+	// profile. If it reaches this callback, the daemon has no human UI to answer
+	// the prompt, so fail closed rather than duplicating the legacy tier logic.
 	sess.SetPermissionFn(func(pr safety.PermissionRequest) {
-		cfg := safety.PresetConfig(sess.PermSvc().Autonomy())
-		allowed := !cfg.NeedsPermission(pr.ToolName, false)
 		if pr.Response != nil {
-			pr.Response <- allowed
+			pr.Response <- false
 		}
 	})
 

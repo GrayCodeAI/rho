@@ -21,6 +21,7 @@ import (
 	"github.com/GrayCodeAI/rho/internal/intelligence/memory"
 	"github.com/GrayCodeAI/rho/internal/intelligence/repomap"
 	"github.com/GrayCodeAI/rho/internal/observability/logger"
+	"github.com/GrayCodeAI/rho/internal/permissions"
 	"github.com/GrayCodeAI/rho/internal/prompt"
 	"github.com/GrayCodeAI/rho/internal/prompts"
 	rhomodel "github.com/GrayCodeAI/rho/internal/provider/routing"
@@ -311,6 +312,15 @@ func configureSession(sess *engine.Session, settings rhoconfig.Settings, maxTurn
 func configureSessionStartup(sess *engine.Session, settings rhoconfig.Settings, maxTurnsOverride ...int) error {
 	sess.WireAgentTool()
 	sess.SetAllowedDirs(addDirs)
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve project directory for permission rules: %w", err)
+	}
+	exactRules := permissions.NewStableRuleStore(permissions.DefaultStableRulesPath(projectDir))
+	if err := exactRules.Load(); err != nil {
+		return fmt.Errorf("load persisted permission rules: %w", err)
+	}
+	sess.PermSvc().SetExactRuleStore(exactRules)
 	_ = sess.SetWorkMode(engine.WorkModeAct)
 	// Auto-commit: CLI flag wins, else settings.auto_commit, default off.
 	autoCommit := autoCommitFlag
@@ -319,20 +329,12 @@ func configureSessionStartup(sess *engine.Session, settings rhoconfig.Settings, 
 	}
 	sess.SetAutoCommit(autoCommit)
 
-	for _, spec := range settings.AutoAllow {
-		sess.PermSvc().Memory().AllowSpec(spec)
-	}
-	for _, spec := range settings.AllowedTools {
-		sess.PermSvc().Memory().AllowSpec(spec)
-	}
-	for _, spec := range settings.DisallowedTools {
-		sess.PermSvc().Memory().DenySpec(spec)
-	}
-	for _, spec := range parseToolListFromCLI(allowedToolsFlag) {
-		sess.PermSvc().Memory().AllowSpec(spec)
-	}
-	for _, spec := range parseToolListFromCLI(disallowedToolsFlag) {
-		sess.PermSvc().Memory().DenySpec(spec)
+	allowSpecs := append(append([]string{}, settings.AutoAllow...), settings.AllowedTools...)
+	allowSpecs = append(allowSpecs, parseToolListFromCLI(allowedToolsFlag)...)
+	denySpecs := append([]string{}, settings.DisallowedTools...)
+	denySpecs = append(denySpecs, parseToolListFromCLI(disallowedToolsFlag)...)
+	if !sess.PermSvc().ReplaceSessionRules(allowSpecs, denySpecs) {
+		return fmt.Errorf("initialize session permission rules: permission service unavailable")
 	}
 
 	if dryRunFlag {

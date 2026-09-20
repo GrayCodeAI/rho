@@ -220,9 +220,9 @@ func (s *Store) Create(ctx context.Context, sessionID, cwd, command string, rows
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "powershell.exe", "-Command", command) // #nosec G204 -- subprocess execution of shell or sandboxed command is the primary responsibility of terminal package
+		cmd = exec.CommandContext(ctx, "powershell.exe", "-Command", command) // #nosec G204 -- subprocess execution of shell command is the primary responsibility of terminal package
 	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command) // #nosec G204 -- subprocess execution of shell or sandboxed command is the primary responsibility of terminal package
+		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command) // #nosec G204 -- subprocess execution of shell command is the primary responsibility of terminal package
 	}
 	cmd.Dir = cwd
 	// Never hand provider API keys to a terminal child process. The agent can

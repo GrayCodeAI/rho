@@ -38,7 +38,7 @@ type DiffTheme struct {
 // DefaultDiffTheme returns a DiffTheme using rho's semantic palette so diff
 // output reads consistently with the rest of the UI: additions in doneGreen,
 // deletions in errorCoral, hunk markers in infoSky, file headers in
-// containerBlue — each color mapped to one meaning, never reused for another.
+// fileHeaderBlue — each color mapped to one meaning, never reused for another.
 func DefaultDiffTheme() DiffTheme {
 	return DiffTheme{
 		Added:   ansiDone,
@@ -46,7 +46,7 @@ func DefaultDiffTheme() DiffTheme {
 		Changed: ansiSky,
 		Context: ansiGrayDim,
 		LineNo:  ansiGrayDim,
-		Header:  ansiContBlue + ansiBold,
+		Header:  ansiFileBlue + ansiBold,
 		WordAdd: ansiDone + ansiBold,
 		WordDel: ansiCoral + ansiBold,
 		Reset:   ansiReset,
@@ -111,11 +111,11 @@ func looksLikeGitDiff(content string) bool {
 // renderGitDiffOutput renders a full `git diff` transcript (potentially many
 // files) with per-file headers plus colorized, line-numbered hunks. This is
 // what turns a wall of flat gray patch text into something scannable: file
-// paths stand out in containerBlue, additions/deletions in doneGreen/errorCoral,
+// paths stand out in fileHeaderBlue, additions/deletions in doneGreen/errorCoral,
 // hunk markers in infoSky, and metadata (index/mode lines) stays dim.
 func renderGitDiffOutput(content string, width int) string {
 	vd := NewVisualDiff(width)
-	fileHeaderStyle := ansiContBlue + ansiBold
+	fileHeaderStyle := ansiFileBlue + ansiBold
 	metaStyle := ansiGrayDim
 
 	lines := strings.Split(content, "\n")

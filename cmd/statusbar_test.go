@@ -46,6 +46,24 @@ func TestRenderStatusBarSecondaryRight_OmitsDuplicatedAutonomy(t *testing.T) {
 	}
 }
 
+func TestRenderPermissionStatus_ShowsActiveTierAndTrust(t *testing.T) {
+	sess := engine.NewSession("", "test-model", "system", nil)
+	sess.PermSvc().SetAutonomy(safety.AutonomyFull)
+	got := renderPermissionStatus(&chatModel{session: sess})
+	if !strings.Contains(got, "Permission") || !strings.Contains(got, "Operator") {
+		t.Fatalf("permission status = %q, want active tier", got)
+	}
+}
+
+func TestRenderStatusBarSecondaryRight_OmitsDuplicatedCost(t *testing.T) {
+	sess := engine.NewSession("", "test-model", "system", nil)
+	sess.CostValue().TotalCostUSD = 1.25
+
+	if got := renderStatusBarSecondaryRight(&chatModel{session: sess}); strings.Contains(got, "$1.250") {
+		t.Fatalf("secondary status = %q, want cost shown only in primary footer", got)
+	}
+}
+
 func TestRenderStatusBar_HidesModelSessionAndShortcut(t *testing.T) {
 	m := &chatModel{
 		session:          engine.NewSession("", "test-model", "system", nil),
@@ -88,9 +106,9 @@ func TestRenderStatusBarRight_OmitsDuplicatedContext(t *testing.T) {
 	}
 }
 
-func TestRenderStatusBarLeft_UsesCachedState(t *testing.T) {
+func TestRenderStatusBarPrimaryLeft_UsesCachedState(t *testing.T) {
 	m := &chatModel{statusLeftVal: "~/repo", statusLeftBranch: "main"}
-	got := renderStatusBarLeft(m)
+	got := renderStatusBarPrimaryLeft(m)
 	if !strings.Contains(got, "~/repo") {
 		t.Fatalf("status left = %q, want cached cwd", got)
 	}

@@ -4,7 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/GrayCodeAI/rho/internal/permissions"
+	"github.com/GrayCodeAI/rho/internal/permissions/stableid"
 )
 
 // TestCheckTool_SpecStageBlocksEvenYOLO verifies the core guarantee documented
@@ -84,7 +90,9 @@ func TestCheckTool_ApproveImplementationAlwaysPrompts(t *testing.T) {
 	pe := NewPermissionEngine()
 	pe.Stage = SpecStageTasks
 	pe.Autonomy = AutonomyYOLO
-	pe.BypassKill.Enable()
+	if !pe.BypassKill.EnableScoped(nil, time.Time{}, "permission test") {
+		t.Fatal("failed to enable test bypass")
+	}
 
 	promptCalled := false
 	pe.PromptFn = func(req PermissionRequest) {
@@ -146,6 +154,31 @@ func TestPermissionEngine_StructuredDecisionIncludesStableReason(t *testing.T) {
 	}
 }
 
+func TestPermissionEngine_UsesPersistedExactRules(t *testing.T) {
+	store := permissions.NewStableRuleStore(filepath.Join(t.TempDir(), "stable-rules.json"))
+	if err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := store.Remember(stableid.KindCommand, "command\x00git status", "git status", stableid.Allow); !ok {
+		t.Fatal("remember allow rule")
+	}
+	if _, ok := store.Remember(stableid.KindCommand, "command\x00git push", "git push", stableid.Deny); !ok {
+		t.Fatal("remember deny rule")
+	}
+
+	pe := NewPermissionEngine()
+	pe.ExactRules = store
+	if d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "git status"}}); d.Outcome != DecisionAllow {
+		t.Fatalf("exact allow decision = %#v", d)
+	}
+	if d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "git push"}}); d.Outcome != DecisionDeny {
+		t.Fatalf("exact deny decision = %#v", d)
+	}
+	if d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "git commit -am change"}}); d.Reason == ReasonGrantAllowed {
+		t.Fatal("unmatched exact rule must not grant a different command")
+	}
+}
+
 func TestPermissionEngine_SnapshotIsStableAfterLivePolicyChange(t *testing.T) {
 	pe := NewPermissionEngine()
 	pe.Autonomy = AutonomyYOLO
@@ -168,12 +201,161 @@ func TestPermissionEngine_SnapshotCapturesRememberedRules(t *testing.T) {
 	}
 }
 
+func TestPermissionMemory_ExactRulesDoNotInterpretGlobs(t *testing.T) {
+	pm := NewPermissionMemory()
+	pm.AlwaysAllowExact("Bash", "echo *")
+
+	if got := pm.Check("Bash", "echo *"); got == nil || !*got {
+		t.Fatal("literal exact action was not allowed")
+	}
+	if got := pm.Check("Bash", "echo hello"); got != nil {
+		t.Fatalf("literal wildcard expanded into a glob: %v", *got)
+	}
+
+	clone := NewPermissionMemoryFromSnapshot(pm.Snapshot())
+	if got := clone.Check("Bash", "echo *"); got == nil || !*got {
+		t.Fatal("exact rule was lost in snapshot")
+	}
+	if got := clone.Check("Bash", "echo hello"); got != nil {
+		t.Fatalf("snapshot exact rule expanded into a glob: %v", *got)
+	}
+}
+
+func TestPermissionMemory_ZeroValueIsUsable(t *testing.T) {
+	var pm PermissionMemory
+	pm.AlwaysAllow("Read")
+	pm.AlwaysAllowExact("Bash", "git status")
+	pm.AlwaysDenyExact("Write", ".env")
+
+	if got := pm.Check("Read", "anything"); got == nil || !*got {
+		t.Fatal("zero-value memory did not record a tool-wide allow")
+	}
+	if got := pm.CheckWithIdentity("Bash", "git status", "git status"); got == nil || !*got {
+		t.Fatal("zero-value memory did not record an exact allow")
+	}
+	if got := pm.CheckWithIdentity("Write", ".env", ".env"); got == nil || *got {
+		t.Fatal("zero-value memory did not record an exact deny")
+	}
+}
+
+func TestPermissionMemory_ExactRulesUseFullIdentityWhenSummaryIsTruncated(t *testing.T) {
+	identity := "git status " + strings.Repeat("x", 200)
+	pm := NewPermissionMemory()
+	pm.AlwaysAllowExact("Bash", identity)
+	summary := identity[:120] + "..."
+
+	if got := pm.CheckWithIdentity("Bash", summary, identity); got == nil || !*got {
+		t.Fatal("exact memory grant did not use the complete identity")
+	}
+	grants := permissions.NewUnifiedGrants(pm)
+	allowed, found := grants.CheckWithIdentity("Bash", summary, identity, time.Now())
+	if !found || !allowed {
+		t.Fatalf("exact unified grant did not use the complete identity: allowed=%v found=%v", allowed, found)
+	}
+	if allowed, found := grants.CheckWithIdentity("Bash", summary, identity+"-different", time.Now()); found || allowed {
+		t.Fatalf("exact unified grant matched a different identity: allowed=%v found=%v", allowed, found)
+	}
+}
+
+func TestPermissionEngine_AliasUsesCanonicalUnifiedGrant(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyYOLO
+	pe.Memory.AllowSpec("Bash(echo *)")
+
+	decision := pe.EvaluateTool(context.Background(), ToolCallInfo{
+		Name: "bash",
+		Args: map[string]interface{}{"command": "echo hello"},
+	})
+	if decision.Outcome != DecisionAllow || decision.Reason != ReasonGrantAllowed {
+		t.Fatalf("alias decision = %#v, want grant allow", decision)
+	}
+}
+
+func TestPermissionMemory_GrantsAreDeterministicallyOrdered(t *testing.T) {
+	pm := NewPermissionMemory()
+	pm.AlwaysAllow("Write")
+	pm.AlwaysAllow("Bash")
+	pm.AlwaysDenyExact("Bash", "rm -rf /")
+	pm.AlwaysAllowExact("Bash", "git status")
+
+	first := pm.Grants()
+	second := pm.Grants()
+	if len(first) != len(second) {
+		t.Fatalf("grant lengths differ: %d vs %d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("grant order changed at %d: first=%#v second=%#v", i, first[i], second[i])
+		}
+	}
+	for i := 1; i < len(first); i++ {
+		if first[i-1].Tool > first[i].Tool || (first[i-1].Tool == first[i].Tool && first[i-1].Pattern > first[i].Pattern) {
+			t.Fatalf("grants are not sorted: %#v", first)
+		}
+	}
+}
+
+func TestPermissionEngine_TierChangePreservesProfileOverrides(t *testing.T) {
+	pe := NewPermissionEngine()
+	if !pe.Profile.Override("auto_network", false) {
+		t.Fatal("expected auto_network to be a supported profile override")
+	}
+
+	pe.Autonomy = AutonomyFull
+	d := pe.EvaluateTool(context.Background(), ToolCallInfo{Name: "WebFetch", Args: map[string]interface{}{"url": "https://example.com"}})
+	if d.Outcome != DecisionAsk {
+		t.Fatalf("tier change lost explicit network override: decision = %#v, want ask", d)
+	}
+	if !pe.Profile.IsOverridden("auto_network") {
+		t.Fatal("tier change lost the profile override marker")
+	}
+}
+
+func TestPermissionEngine_FullOnlyAutoRunsAllowlistedShellCommands(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyFull
+
+	if d := pe.EvaluateTool(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "git status"}}); d.Outcome != DecisionAllow {
+		t.Fatalf("allowlisted Bash command = %#v, want allow", d)
+	}
+	if d := pe.EvaluateTool(context.Background(), ToolCallInfo{Name: "Bash", Args: map[string]interface{}{"command": "python -c 'print(1)'"}}); d.Outcome != DecisionAsk {
+		t.Fatalf("unknown Bash command = %#v, want ask", d)
+	}
+}
+
+func TestPermissionEngine_PowerShellDoesNotUseBashFastPath(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyFull
+	d := pe.EvaluateTool(context.Background(), ToolCallInfo{Name: "PowerShell", Args: map[string]interface{}{"command": "Get-ChildItem"}})
+	if d.Outcome != DecisionAsk {
+		t.Fatalf("PowerShell command = %#v, want ask", d)
+	}
+}
+
 func TestPermissionEngine_EvaluateToolReturnsAskWithoutBlocking(t *testing.T) {
 	pe := NewPermissionEngine()
 	pe.Autonomy = AutonomySupervised
 	d := pe.EvaluateTool(context.Background(), ToolCallInfo{Name: "Write"})
 	if d.Outcome != DecisionAsk || d.Reason != ReasonUserPrompt {
 		t.Fatalf("decision = %#v, want ask/user_prompt", d)
+	}
+}
+
+func TestPermissionEngine_EvaluateToolDoesNotRecordPreview(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomySupervised
+	metricsBefore := pe.PermissionMetrics().Snapshot()
+	auditBefore := len(pe.AuditLog().Recent(0))
+
+	d := pe.EvaluateTool(context.Background(), ToolCallInfo{Name: "Write", Args: map[string]interface{}{"path": "README.md"}})
+	if d.Outcome != DecisionAsk {
+		t.Fatalf("preview decision = %#v, want ask", d)
+	}
+	if got := pe.PermissionMetrics().Snapshot(); !reflect.DeepEqual(got, metricsBefore) {
+		t.Fatalf("preview changed metrics: before=%v after=%v", metricsBefore, got)
+	}
+	if got := len(pe.AuditLog().Recent(0)); got != auditBefore {
+		t.Fatalf("preview changed audit log length: before=%d after=%d", auditBefore, got)
 	}
 }
 
@@ -229,10 +411,46 @@ func TestCheckTool_ExplicitDenyOverridesAutonomy(t *testing.T) {
 	}
 	pe := NewPermissionEngine()
 	pe.Autonomy = AutonomyYOLO
-	pe.AutoMode.Record("Write", "x.txt", true)
+	pe.Memory.AlwaysAllowPattern("Write:x.txt")
 	pe.Memory.AlwaysDenyPattern("Write:x.txt")
 	if allowed, reason := pe.CheckTool(context.Background(), ToolCallInfo{Name: "Write", Args: map[string]interface{}{"file_path": "x.txt"}}); allowed || reason != "Permission denied (rule)." {
 		t.Fatalf("explicit deny did not beat auto-allow: allowed=%v reason=%q", allowed, reason)
+	}
+}
+
+func TestCheckTool_UnknownToolFailsClosedInYOLOAndBypass(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyYOLO
+
+	d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "plugin_future_tool"})
+	if d.Outcome != DecisionDeny || d.Reason != ReasonPromptUnavailable {
+		t.Fatalf("unknown tool in YOLO should fail closed without a prompt: %+v", d)
+	}
+
+	if !pe.BypassKill.EnableScoped(nil, time.Time{}, "unknown-tool test") {
+		t.Fatal("failed to enable test bypass")
+	}
+	d = pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "plugin_future_tool"})
+	if d.Outcome != DecisionDeny || d.Reason != ReasonPromptUnavailable {
+		t.Fatalf("unknown tool must not be granted by bypass: %+v", d)
+	}
+}
+
+func TestCheckTool_RegisteredExternalToolRequiresExplicitApproval(t *testing.T) {
+	pe := NewPermissionEngine()
+	pe.Autonomy = AutonomyYOLO
+	pe.KnownTools = map[string]struct{}{"mcp__server__publish": {}}
+	pe.UntrustedTools = map[string]struct{}{"mcp__server__publish": {}}
+
+	d := pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "mcp__server__publish"})
+	if d.Outcome != DecisionDeny || d.Reason != ReasonPromptUnavailable {
+		t.Fatalf("registered external tool should not inherit YOLO: %+v", d)
+	}
+
+	pe.Memory.AlwaysAllowExact("mcp__server__publish", "mcp__server__publish")
+	d = pe.CheckToolDecision(context.Background(), ToolCallInfo{Name: "mcp__server__publish"})
+	if d.Outcome != DecisionAllow {
+		t.Fatalf("explicit remembered rule should authorize external tool: %+v", d)
 	}
 }
 

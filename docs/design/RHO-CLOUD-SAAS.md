@@ -15,8 +15,8 @@ with optional SSE streaming, plus session CRUD — bound to loopback
 (`netutil.LoopbackHost`, port `4590` by default) and protected by a single
 optional shared API key (`Server.apiKey`, compared in `daemon.go:185-205`). There
 is no notion of a user, an org, a tenant, a credit balance, or remote isolated
-execution. Sandboxed execution is **local Docker** only
-(`rho/internal/sandbox/container.go`).
+execution. Rho does not provide a container or OS sandbox runtime; commands
+run on the host behind the permission engine and tool-level path guards.
 
 This doc designs **Rho Cloud**: a hosted, multi-tenant execution plane that runs
 the rho agent as a managed service, authenticated by OAuth and API keys, metered
@@ -74,8 +74,9 @@ once and shows how both consume it.
    read-only and continue-able shares.
 6. **Org RBAC** with Member / Admin / Owner tiers, invitations, and org-scoped
    credit pools and provider config.
-7. **Cloud sandboxed execution.** Replace local Docker with on-demand isolated
-   microVMs (E2B/Daytona/Firecracker) behind rho's existing sandbox interface.
+7. **Cloud-isolated execution.** Keep local rho host-native and, if this
+   proposal is implemented, run cloud workers in on-demand isolated microVMs
+   (E2B/Daytona/Firecracker) behind a new cloud-only boundary.
 8. **Browser/web UI** for chat-driven editing, served from the plane, consuming
    the existing SSE stream.
 9. **IDE extensions** (VS Code, JetBrains) over ACP with IDE-native diff review.
@@ -130,9 +131,8 @@ once and shows how both consume it.
                          ┌──────────────────────┐
                          │ Sandbox provider      │
                          │ (E2B / Daytona microVM)│  ◀── CloudSandbox
-                         └──────────────────────┘     implements the same
-                                                       executor interface as
-                                                       ContainerSandbox
+                         └──────────────────────┘     uses a new cloud-only
+                                                       execution boundary
 ```
 
 **Edge / API Gateway** — terminates TLS, authenticates every request (OAuth bearer
@@ -161,8 +161,9 @@ running server-side. One worker handles one active session at a time (worktree-p
 session isolation), matching the existing single-user model — we scale by running
 many workers, not by making one worker multi-tenant.
 
-**Sandbox provider** — `CloudSandbox`, a net-new implementation of the existing
-`containerExecutor` interface (`container.go:18-21`) backed by E2B/Daytona.
+**Cloud execution provider** — a future `CloudSandbox` boundary backed by
+E2B/Daytona. This is intentionally net-new cloud code; local rho has no
+container executor or sandbox backend to reuse.
 
 ### 3.2 Data Model
 
@@ -312,8 +313,8 @@ This is the crux: **what is reusable today vs. net-new.**
 | Auth primitives | `internal/auth/auth.go` (`TokenStore`, `SecureStorage`), `device_flow.go` (full RFC 8628) | Device-grant **client** is done. `SecureStorage` (macOS keychain + file fallback, `auth.go:54-121`) stays for local credential caching of cloud tokens. `GenerateNonce` (`auth.go:124`) for OAuth state/PKCE. |
 | Constant-time key compare | `daemon.go:207-224` | API-key verification logic carries over (but keys move to hashed storage; see net-new). |
 | Flux normalized usage | `flux/engine` response and stream usage DTOs through Rho's adapter | Reuse model/token dimensions as metering input. Do not import lower Flux packages or trust client-computed prices for billing. |
-| Sandbox executor interface | `internal/sandbox/container.go:18-21` (`containerExecutor`: `Exec`, `Running`) | `CloudSandbox` implements the same interface → drop-in. Callers don't know if they're on local Docker or a cloud microVM. |
-| Sandbox lifecycle manager | `internal/sandbox/snapshot_sandbox.go:52-228` (`Create/Pause/Resume/Snapshot/Restore/List/Cleanup`) | Existing pause/resume/snapshot semantics map cleanly onto E2B/Daytona pause+snapshot APIs; the manager abstraction guides the `CloudSandbox` API shape. |
+| Remote execution interface | Planned cloud execution boundary | A future `CloudSandbox` would be isolated from the local host runtime behind an explicit provider interface. |
+| Sandbox lifecycle manager | Net-new cloud component | E2B/Daytona pause/resume/snapshot semantics should be designed at the cloud boundary; local rho has no sandbox lifecycle manager. |
 | Messaging gateways | `internal/daemon/gateway.go`, `telegram.go`, `discord.go`, `slack.go` | Already forward to `/v1/chat` via `forwardToRho` (`gateway.go:17`) with bearer auth. In cloud they forward to the tenant-scoped chat endpoint with the org's key — minimal change. |
 | Cron engine | (not yet implemented) | Cloud scheduled runs (Routines) are planned, per `TOP20_COMPARISON.md:48`. Out of scope here but shares the worker plane. |
 
@@ -337,7 +338,7 @@ This is the crux: **what is reusable today vs. net-new.**
 5. **Worker orchestration** — running, scaling, and isolating Agent Workers
    (pods/processes) with worktree-per-session. Today there is exactly one
    in-process engine. Net-new control loop.
-6. **`CloudSandbox`** — E2B/Daytona-backed implementation of `containerExecutor`.
+6. **`CloudSandbox`** — E2B/Daytona-backed cloud-only execution provider.
    The interface and call sites exist; the cloud backend does not.
 7. **Billing/credit ledger + invoicing + Stripe integration** — flux gives
    enforcement and cost math; the ledger, top-ups, plans, and payment processor are
@@ -416,14 +417,14 @@ These repos are privacy-first (`TOP20_COMPARISON.md:20`); the cloud plane must n
 erode that.
 
 1. **Cloud is opt-in and isolated from local mode.** Local rho never phones home;
-   nothing in `internal/engine` or `internal/sandbox` gains a cloud dependency. The
+   nothing in `internal/engine` gains a cloud dependency. The
    plane is a separate deployable.
 2. **Tenant isolation by construction.** One session ↔ one Agent Worker ↔ one
    microVM; no shared filesystem or process between tenants. Worktree-per-session
-   (already rho's isolation model) carries over. Sandboxes default to
-   `--network none` semantics like `ContainerSandbox` (`container.go:81`) unless a
-   workspace explicitly grants egress, gated by the existing net-proxy allowlisting
-   (`internal/sandbox/netproxy.go`).
+   (already rho's isolation model) carries over. Cloud microVMs should default to
+   no network egress unless a workspace explicitly grants it through a cloud-owned
+   allowlist. Local host execution remains governed by rho's permission and path
+   policies, not by this cloud design.
 3. **Secrets never stored raw.** API keys stored as hashes only (the constant-time
    compare in `daemon.go:207` becomes hash-compare). OAuth refresh tokens encrypted
    at rest. Reuse `SecureStorage` (`auth.go:54`) for client-side caching only.

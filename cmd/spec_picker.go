@@ -48,32 +48,41 @@ var specPickerEntries = []specPickerEntry{
 // tiers — the spec workflow is a linear stage the model advances through
 // via tool calls, not something the user jumps to directly.
 type SpecPicker struct {
-	open     bool
-	input    textinput.Model
-	entries  []specPickerEntry
-	filtered []specPickerEntry
-	sel      int
-	width    int
-	stage    safety.SpecStage
+	open       bool
+	input      textinput.Model
+	inputReady bool
+	entries    []specPickerEntry
+	filtered   []specPickerEntry
+	sel        int
+	width      int
+	stage      safety.SpecStage
+}
+
+func (sp *SpecPicker) ensureInput() {
+	if sp.inputReady {
+		return
+	}
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter…"
+	ti.SetWidth(40)
+	sp.input = ti
+	sp.inputReady = true
 }
 
 // NewSpecPicker creates a new spec workflow picker.
 func NewSpecPicker(width int) *SpecPicker {
-	ti := textinput.New()
-	ti.Placeholder = "Type to filter…"
-	ti.Focus()
-	ti.SetWidth(40)
-
-	return &SpecPicker{
-		input:    ti,
-		width:    width,
-		entries:  specPickerEntries,
-		filtered: specPickerEntries,
-	}
+	sp := &SpecPicker{width: width, entries: specPickerEntries, filtered: specPickerEntries}
+	sp.ensureInput()
+	sp.input.Focus()
+	return sp
 }
 
 // Open opens the picker, recording the current stage for the header line.
 func (sp *SpecPicker) Open(stage safety.SpecStage) {
+	sp.ensureInput()
+	if len(sp.entries) == 0 {
+		sp.entries = append([]specPickerEntry(nil), specPickerEntries...)
+	}
 	sp.open = true
 	sp.input.SetValue("")
 	sp.input.Focus()
@@ -170,18 +179,18 @@ func (sp *SpecPicker) Render(viewWidth int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(paletteTitleStyle.Render("  Spec"))
-	b.WriteString(paletteDimStyle.Render("  (↑↓ navigate · Enter select · Esc dismiss)"))
+	b.WriteString(paletteTitleStyle().Render("  Spec"))
+	b.WriteString(paletteDimStyle().Render("  (↑↓ navigate · Enter select · Esc dismiss)"))
 	b.WriteString("\n")
-	b.WriteString(paletteDimStyle.Render(fmt.Sprintf("  Current stage: %s", specStageDisplayName(sp.stage))))
+	b.WriteString(paletteDimStyle().Render(fmt.Sprintf("  Current stage: %s", specStageDisplayName(sp.stage))))
 	b.WriteString("\n\n")
 
 	sp.input.SetWidth(boxWidth - 4)
-	b.WriteString(paletteInputStyle.Width(boxWidth - 2).Render(sp.input.View()))
+	b.WriteString(paletteInputStyle().Width(boxWidth - 2).Render(sp.input.View()))
 	b.WriteString("\n\n")
 
 	if len(sp.filtered) == 0 {
-		b.WriteString(paletteDimStyle.Render("  No matching actions"))
+		b.WriteString(paletteDimStyle().Render("  No matching actions"))
 	} else {
 		nameWidth := 0
 		for _, e := range sp.filtered {
@@ -192,15 +201,15 @@ func (sp *SpecPicker) Render(viewWidth int) string {
 		for i, e := range sp.filtered {
 			line := "  " + lipgloss.NewStyle().Bold(true).Render(padRight(e.Name, nameWidth)) + "  " + e.Description
 			if i == sp.sel {
-				b.WriteString(paletteSelStyle.Width(boxWidth).Render("  " + padRight(e.Name, nameWidth) + "  " + e.Description))
+				b.WriteString(paletteSelStyle().Width(boxWidth).Render("  " + padRight(e.Name, nameWidth) + "  " + e.Description))
 			} else {
-				b.WriteString(paletteItemStyle.Width(boxWidth).Render(line))
+				b.WriteString(paletteItemStyle().Width(boxWidth).Render(line))
 			}
 			b.WriteString("\n")
 		}
 	}
 
-	return paletteBoxStyle.Width(boxWidth).Render(strings.TrimRight(b.String(), "\n"))
+	return paletteBoxStyle().Width(boxWidth).Render(strings.TrimRight(b.String(), "\n"))
 }
 
 // specStageDisplayName mirrors specStageLabel but takes a stage value

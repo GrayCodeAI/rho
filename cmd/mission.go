@@ -206,7 +206,7 @@ func planWithLLM(ctx context.Context, prompt, provider, model string, settings r
 	if err != nil {
 		return nil, err
 	}
-	sess.PermSvc().SetMaxTurns(1)
+	_ = sess.SetMaxTurns(1)
 	sess.PermSvc().SetPermissionFn(func(req safety.PermissionRequest) {
 		if req.Response != nil {
 			req.Response <- true

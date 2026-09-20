@@ -68,7 +68,7 @@ func (m *chatModel) rebuildWelcomeCache(opts ...any) {
 	if m.pluginRuntime != nil {
 		skillsCount = len(m.pluginRuntime.SmartSkills)
 	}
-	m.welcomeCache = buildWelcomeMessageWithSnapshot(m.session, m.sessionID, m.registry, nil, m.settings, skillsCount, connectedMCPCount(m.registry), frame, width, height, m.welcomeStatusSnapshot(), m.lastCommand)
+	m.welcomeCache = buildWelcomeMessageWithSnapshotAndMascot(m.session, m.sessionID, m.registry, nil, m.settings, skillsCount, connectedMCPCount(m.registry), frame, width, height, m.welcomeStatusSnapshot(), m.lastCommand, m.mascotEnabled)
 }
 
 // buildWelcomeMessage renders the branded inline RHO welcome block.
@@ -81,6 +81,10 @@ func buildWelcomeMessage(sess *engine.Session, sessionID string, registry *tool.
 }
 
 func buildWelcomeMessageWithSnapshot(sess *engine.Session, sessionID string, registry *tool.Registry, saved *session.Session, settings rhoconfig.Settings, skillsCount, mcpCount int, eyeFrame int, width, height int, snapshot welcomeStatusSnapshot, lastCommand string) string {
+	return buildWelcomeMessageWithSnapshotAndMascot(sess, sessionID, registry, saved, settings, skillsCount, mcpCount, eyeFrame, width, height, snapshot, lastCommand, false)
+}
+
+func buildWelcomeMessageWithSnapshotAndMascot(sess *engine.Session, sessionID string, registry *tool.Registry, saved *session.Session, settings rhoconfig.Settings, skillsCount, mcpCount int, eyeFrame int, width, height int, snapshot welcomeStatusSnapshot, lastCommand string, useMascot bool) string {
 	// Talon Gold is used for the RHO wordmark. All escapes come from the
 	// theme palette (theme.go) so a rebrand stays a one-file change.
 	logoC := ansiOrange
@@ -93,7 +97,7 @@ func buildWelcomeMessageWithSnapshot(sess *engine.Session, sessionID string, reg
 	rst := ansiReset
 
 	// Status marks — green ✓ = present, dim ○ = none (not an error),
-	// red × = actual problem (e.g. Docker enabled but not running). Using a
+	// red × = actual problem. Using a
 	// neutral mark for "none" avoids the alarming all-red look on a fresh repo.
 	markPresent := greenC + ansiBold + icons.CheckBold() + rst
 	markNone := sepC + "○" + rst
@@ -120,6 +124,11 @@ func buildWelcomeMessageWithSnapshot(sess *engine.Session, sessionID string, reg
 	}
 
 	art := rhoLogoArtLines
+	useMascot = useMascot && !tight
+	// Keep the text wordmark even when a graphical mascot is requested. The
+	// mascot is a best-effort terminal escape sequence; hiding the canonical
+	// fallback makes the entire welcome screen disappear in terminals that
+	// advertise image support but do not render the sequence.
 	var eyeGlyph string
 	switch eyeFrame {
 	case 1, 3:
@@ -127,7 +136,7 @@ func buildWelcomeMessageWithSnapshot(sess *engine.Session, sessionID string, reg
 	case 2:
 		eyeGlyph = "|-\\/-|"
 	}
-	if eyeGlyph != "" {
+	if eyeGlyph != "" && !useMascot {
 		art = append([]string(nil), rhoLogoArtLines...)
 		for i, line := range art {
 			art[i] = strings.Replace(line, "|0\\/0|", eyeGlyph, 1)
@@ -190,6 +199,15 @@ func buildWelcomeMessageWithSnapshot(sess *engine.Session, sessionID string, reg
 	indicators := welcomeIndicatorRow(skillsCount, snapshot.agentsOK, mcpCount, greenC, sepC, rst, markPresent, markNone)
 	b.WriteByte('\n')
 	b.WriteString(center(visibleWidth(indicators), indicators) + "\n")
+
+	// Give a new session a useful starting point. This is deliberately two
+	// short lines rather than a panel: the input remains the primary action,
+	// while the empty state explains what to type without consuming the chat.
+	b.WriteString("\n")
+	guidance := dimC + "Inspect, change, or test this codebase with rho." + rst
+	examples := dimC + `Try: "explain this repo"  ·  "run the tests"  ·  "/help"` + rst
+	b.WriteString(center(visibleWidth(guidance), guidance) + "\n")
+	b.WriteString(center(visibleWidth(examples), examples) + "\n")
 
 	if resume := actLine(saved, sessionID); resume != "" {
 		b.WriteString("\n")
@@ -303,7 +321,7 @@ func welcomeIndicatorRow(skillsCount int, agentsOK bool, mcpCount int, activeC, 
 	)
 }
 
-// welcomeModeBadge was removed with container execution.
+// welcomeModeBadge is intentionally absent; rho uses host permission tiers.
 
 func actLine(saved *session.Session, sessionID string) string {
 	if saved != nil && len(sessionID) >= 8 {
