@@ -41,3 +41,19 @@ repositories:
     kind: platform
     language: typescript
     workspace: false
+
+  - directory: rover
+    github_repo: rover
+    product_name: Rover
+    kind: tooling
+    language: go
+    module: github.com/GrayCodeAI/rover
+    workspace: false
+
+  - directory: across
+    github_repo: across
+    product_name: Across
+    kind: tooling
+    language: go
+    module: github.com/graycodeai/across
+    workspace: false
