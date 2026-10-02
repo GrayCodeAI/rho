@@ -3,7 +3,29 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ECO_DIR="$(cd "${ROOT_DIR}/.." && pwd)"
-MANIFEST="${ROOT_DIR}/ecosystem.yaml"
+
+# The canonical inventory lives in GrayCodeAI/graycode-eco, not in a product.
+# A tenant must not own the registry of its siblings: rho was renamed from hawk
+# without signalling the other nine repositories, and the in-product copy of
+# this list silently omitted beam. See graycode-eco/adr/0001.
+#
+# Prefer the roof. Fall back to the deprecated in-product copy only when the
+# roof is not checked out alongside, which happens for a standalone `go build`
+# of rho outside the ecosystem workspace. Callers do not need to know which one
+# was used.
+ROOF_MANIFEST="${ECO_DIR}/graycode-eco/ecosystem.yaml"
+LEGACY_MANIFEST="${ROOT_DIR}/ecosystem.yaml"
+
+if [[ -f "${ROOF_MANIFEST}" ]]; then
+  MANIFEST="${ROOF_MANIFEST}"
+elif [[ -f "${LEGACY_MANIFEST}" ]]; then
+  MANIFEST="${LEGACY_MANIFEST}"
+  echo "WARNING: graycode-eco is not checked out; falling back to the deprecated ${LEGACY_MANIFEST#"${ROOT_DIR}/"}" >&2
+  echo "WARNING: it is incomplete (no beam) and must not be treated as canonical" >&2
+else
+  echo "manifest not found: looked for ${ROOF_MANIFEST} and ${LEGACY_MANIFEST}" >&2
+  exit 1
+fi
 
 usage() {
   echo "usage: $0 validate | json | list <all|workspace|engines>" >&2
@@ -14,6 +36,10 @@ usage() {
 
 records() {
   awk '
+    # Records are the entries under `repositories:`. The roof manifest also has
+    # a `not_products:` block listing repositories in the GitHub organization
+    # that are deliberately not ecosystem products; those entries have no
+    # `directory:` key and are therefore skipped here, which is the intent.
     function flush() {
       if (directory != "") {
         if (module == "") module = "-"

@@ -519,10 +519,19 @@ You may keep a **personal** parent **`go.work`** that lists alternate clones on 
 | **graycode-skills** | [GrayCodeAI/graycode-skills](https://github.com/GrayCodeAI/graycode-skills) | Community skill registry |
 | **graycode-platform** | [GrayCodeAI/graycode-platform](https://github.com/GrayCodeAI/graycode-platform) | Web, BFF, and Rho Cloud |
 
-`ecosystem.yaml` is the canonical inventory of repositories cloned as
-siblings in this local workspace; tooling reads it rather than carrying its
-own repo-name list. `flux` is the only Go module dependency outside this
-repo; it is consumed through its stable engine facade.
+The canonical inventory of sibling repositories is
+[`GrayCodeAI/graycode-eco/ecosystem.yaml`](https://github.com/GrayCodeAI/graycode-eco/blob/main/ecosystem.yaml),
+not the `ecosystem.yaml` in this repo, which is deprecated and incomplete. The
+inventory moved because a product must not own the registry of its siblings: it
+lived here, `rho` was renamed from `hawk` without signalling the other nine
+repositories, and the list silently omitted `beam`. See
+[graycode-eco/adr/0001](https://github.com/GrayCodeAI/graycode-eco/blob/main/adr/README.md).
+
+`scripts/ecosystem-manifest.sh` reads the roof's file and falls back to the
+deprecated local copy only when the roof is not checked out alongside.
+
+`flux` is the only Go module dependency in the entire ecosystem; it is consumed
+through its stable engine facade.
 
 For the consolidated repo map and the current-vs-proposed architecture diagrams, see [docs/architecture/rho-current-vs-proposed.md](docs/architecture/rho-current-vs-proposed.md).
 For execution-graph ownership, automatic capture seams, and export/sync

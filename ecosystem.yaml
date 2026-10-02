@@ -1,10 +1,39 @@
+# DEPRECATED — the canonical inventory moved.
+#
+# This file is no longer the source of truth. As of 2026-10-02 the canonical
+# inventory is:
+#
+#     GrayCodeAI/graycode-eco  ->  ecosystem.yaml
+#
+# Why it moved: a product cannot own the registry of its siblings. This file
+# lived inside `rho` and described itself as canonical, which meant `rho` could
+# rename itself without signalling the other nine repositories. It did exactly
+# that — the organization holds `hawk` and `eyrie` as redirects from the prior
+# names of `rho` and `flux`. The list also omitted `beam` entirely.
+#
+# What is still true below, and what is not:
+#
+#   - The `contracts` block is accurate and is now maintained in the roof.
+#   - The repository list is INCOMPLETE: `beam` is missing, and `lean-prover`
+#     and `graycode-logo` are unaccounted for.
+#   - `tracks_eagle` and other historical fields describe a removed ecosystem.
+#
+# Consumers should migrate:
+#
+#   scripts/ecosystem-manifest.sh          reads this file
+#   scripts/generate-workspace.sh          calls the above
+#   scripts/check-module-release-parity.sh  reads this file
+#   .github/actions/checkout-flux          calls the above
+#   .github/actions/setup-deps             calls the above
+#
+# The migration keeps `rho/scripts/ecosystem-manifest.sh` as the single reader,
+# repointed at the roof's file, with a fallback to this one when the roof is not
+# checked out. The scripts do not need to know where the manifest lives.
+#
+# See graycode-eco/adr/0001 for the decision and the reasoning.
+
 schema_version: 1
 
-# Canonical repository inventory for the GrayCodeAI ecosystem. Repository
-# directories and GitHub repository names are listed per repository;
-# product_name records the user-facing capability. Tooling must consume this
-# file instead of carrying its own repo-name list. Only repositories that
-# exist are listed: removed siblings stay out until they are restored.
 contracts:
   portable_graph_schema: rho.graph/v1
   cloud_graph_schema: graycode-cloud.graph/v1

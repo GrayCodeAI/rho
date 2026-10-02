@@ -7,7 +7,14 @@ set -euo pipefail
 # Run from the Rho repository root.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MANIFEST="${ROOT_DIR}/ecosystem.yaml"
+ECO_DIR="$(cd "${ROOT_DIR}/.." && pwd)"
+# Prefer the roof's manifest; fall back to the deprecated in-product copy.
+# See scripts/ecosystem-manifest.sh and graycode-eco/adr/0001.
+if [[ -f "${ECO_DIR}/graycode-eco/ecosystem.yaml" ]]; then
+  MANIFEST="${ECO_DIR}/graycode-eco/ecosystem.yaml"
+else
+  MANIFEST="${ROOT_DIR}/ecosystem.yaml"
+fi
 repos=()
 while IFS= read -r repo; do
   [[ "${repo}" != "rho" && -n "${repo}" ]] && repos+=("${repo}")

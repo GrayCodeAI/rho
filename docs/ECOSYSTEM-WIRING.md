@@ -1,9 +1,14 @@
 # GrayCode ecosystem wiring
 
-> **STALE (2026-09-18):** Diagrams below predate `eagle` removal (2026-09-04) and list 14 repos / 6 engines. Canonical inventory is `ecosystem.yaml` (now 6 repos: `rho`, `flux`, `graycode-skills`, `graycode-platform`, `rover`, `across`). Use that for workspace/boundary checks. See `PLAN.md` at eco root for remediation.
+> **STALE (2026-09-18):** Diagrams below predate `eagle` removal (2026-09-04) and list 14 repos / 6 engines.
 > NOTE (2026-09-04): `eagle` contracts vendored into `rho/internal/contracts`.
+> **INVENTORY MOVED (2026-10-02):** the canonical machine-readable inventory is
+> [`GrayCodeAI/graycode-eco/ecosystem.yaml`](https://github.com/GrayCodeAI/graycode-eco/blob/main/ecosystem.yaml)
+> (10 products, including `beam`). The `ecosystem.yaml` in this repo is
+> deprecated and incomplete. Use that file for workspace and boundary checks;
+> `scripts/ecosystem-manifest.sh` already reads it.
 
-This document is the historical implementation contract. `ecosystem.yaml` is the canonical machine-readable inventory.
+This document is the historical implementation contract.
 
 ## Current state before this change
 
@@ -37,7 +42,7 @@ durable Queue-delivery intent.
 
 ```mermaid
 flowchart TB
-  Manifest[rho/ecosystem.yaml\ncanonical repo and contract inventory]
+  Manifest[GrayCodeAI/graycode-eco/ecosystem.yaml\ncanonical repo and contract inventory]
   Manifest --> Workspace[generated root go.work]
   Manifest --> Guards[boundary and release parity guards]
   Manifest --> OwlSnapshot[owl/ecosystem.json]
@@ -102,8 +107,9 @@ must use `directory`/`github_repo`; UI copy may use `product_name`.
 
 ## Contract and event flow
 
-1. Engine packages expose only the facade declared in `ecosystem.yaml`; the
-   manifest validator rejects a missing or out-of-module facade.
+1. Engine packages expose only the facade declared in the canonical inventory
+   (`GrayCodeAI/graycode-eco/ecosystem.yaml`); the manifest validator rejects a
+   missing or out-of-module facade.
 2. Eagle commit `9d358dde4ad8` is the cross-repository contract revision, pinned
    through its reachable Go pseudo-version until the next semver tag is published;
    the parity gate checks every declared consumer.
